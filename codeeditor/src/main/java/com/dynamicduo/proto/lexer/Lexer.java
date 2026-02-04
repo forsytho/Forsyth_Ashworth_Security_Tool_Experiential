@@ -25,152 +25,158 @@ package com.dynamicduo.proto.lexer;
  * skip whitespace/newlines, recognize keywords, identifiers, punctuation,
  * and produce a stream of Token objects for the parser.
  */
+import java.util.ArrayList;
+import java.util.List;
+import com.dynamicduo.proto.parser.ParseException;
+
 public class Lexer {
-    private final String src;
-    private final int len;
+
+    private final String input;
+    private final int length;
     private int pos = 0;
+
     private int line = 1;
+    private int column = 1;
 
-    public Lexer(String source) {
-        this.src = source;
-        this.len = source.length();
+    public Lexer(String input) {
+        this.input = input;
+        this.length = input.length();
     }
 
-    public Token nextToken() {
-        skipWhitespace();
+    public List<Token> tokenize() throws ParseException {
+        List<Token> tokens = new ArrayList<>();
 
-        if (isAtEnd()) {
-            return new Token(TokenType.EOF, "", line);
-        }
-
-        char c = advance();
-
-        // Single-char / multi-char symbols
-        switch (c) {
-            case ':':
-                return new Token(TokenType.COLON, ":", line);
-            case ',':
-                return new Token(TokenType.COMMA, ",", line);
-            case '=':
-                return new Token(TokenType.EQUAL, "=", line);
-            case '(':
-                return new Token(TokenType.LPAREN, "(", line);
-            case ')':
-                return new Token(TokenType.RPAREN, ")", line);
-            case '-':
-                if (match('>')) {
-                    return new Token(TokenType.ARROW, "->", line);
-                }
-                // lone '-' falls through to default handling
-                break;
-            case '|':
-                // treat "||" as the concatenation operator.
-                if (match('|')) {
-                    return new Token(TokenType.CONCAT, "||", line);
-                }
-                // single '|' is unexpected; let it fall through so it can
-                // at least surface something as an identifier-ish token.
-                break;
-        }
-
-        if (Character.isLetter(c)) {
-            return identifier(c);
-        }
-
-        // Unknown character: treat as IDENTIFIER lexeme so the parser
-        // can surface an error instead of crashing.
-        return new Token(TokenType.IDENTIFIER, String.valueOf(c), line);
-    }
-
-    // --- helpers ---
-
-    private Token identifier(char first) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(first);
-
-        while (!isAtEnd() && (Character.isLetterOrDigit(peek()) || peek() == '_')) {
-            sb.append(advance());
-        }
-
-        String text = sb.toString();
-
-
-        // Keep original spelling for identifiers
-        String raw = text;
-        String lower = text.toLowerCase(); // only for keyword matching
-
-
-        // Recognize keywords
-        switch (lower) {
-            case "roles":
-                return new Token(TokenType.ROLES, raw, line);
-            case "shared":  
-                return new Token(TokenType.SHARED, raw, line);
-            case "public":  
-                return new Token(TokenType.PUBLIC, raw, line);
-            case "private":
-                return new Token(TokenType.PRIVATE, raw, line);
-            case "key":     
-                return new Token(TokenType.KEY, raw, line);
-            case "assert":  
-                return new Token(TokenType.ASSERT, raw, line);
-            case "secret":  
-                return new Token(TokenType.SECRET, raw, line);
-            case "enc":
-                return new Token(TokenType.ENC, raw, line);
-            case "dec":
-                return new Token(TokenType.DEC, raw, line);
-            case "mac":
-                return new Token(TokenType.MAC, raw, line);
-            case "sign":
-                return new Token(TokenType.SIGN, raw, line);
-            case "verify":
-                return new Token(TokenType.VRFY, raw, line);
-            case "hash":
-                return new Token(TokenType.HASH, raw, line);
-            default:
-                return new Token(TokenType.IDENTIFIER, raw, line);
-        }
-    }
-
-    private void skipWhitespace() {
         while (!isAtEnd()) {
             char c = peek();
+
+            if (Character.isWhitespace(c)) {
+                consumeWhitespace();
+                continue;
+            }
+
+            int startLine = line;
+            int startColumn = column;
+
+            // Identifiers / keywords
+            if (Character.isLetter(c)) {
+                String word = readIdentifier();
+                TokenType type = keywordOrIdentifier(word);
+                tokens.add(new Token(type, word, startLine, startColumn));
+                continue;
+            }
+
             switch (c) {
-                case ' ':
-                case '\r':
-                case '\t':
+                case '(':
                     advance();
+                    tokens.add(new Token(TokenType.LPAREN, "(", startLine, startColumn));
                     break;
-                case '\n':
-                    line++;
+                case ')':
                     advance();
+                    tokens.add(new Token(TokenType.RPAREN, ")", startLine, startColumn));
+                    break;
+                case ',':
+                    advance();
+                    tokens.add(new Token(TokenType.COMMA, ",", startLine, startColumn));
+                    break;
+                case ':':
+                    advance();
+                    tokens.add(new Token(TokenType.COLON, ":", startLine, startColumn));
+                    break;
+                case '=':
+                    advance();
+                    tokens.add(new Token(TokenType.EQUAL, "=", startLine, startColumn));
+                    break;
+                case '|':
+                    advance();
+                    if (match('|')) {
+                        tokens.add(new Token(TokenType.CONCAT, "||", startLine, startColumn));
+                    } else {
+                        throw error("Expected '|' to complete '||'", startLine, startColumn);
+                    }
+                    break;
+                case '-':
+                    advance();
+                    if (match('>')) {
+                        tokens.add(new Token(TokenType.ARROW, "->", startLine, startColumn));
+                    } else {
+                        throw error("Expected '>' after '-'", startLine, startColumn);
+                    }
                     break;
                 default:
-                    return;
+                    throw error("Unexpected character '" + c + "'", startLine, startColumn);
             }
         }
+
+        tokens.add(new Token(TokenType.EOF, "", line, column));
+        return tokens;
     }
 
+    // ---------------- helpers ----------------
 
     private boolean isAtEnd() {
-        return pos >= len;
+        return pos >= length;
     }
 
     private char peek() {
-        return isAtEnd() ? '\0' : src.charAt(pos);
+        return input.charAt(pos);
     }
 
     private char advance() {
-        return src.charAt(pos++);
+        char c = input.charAt(pos++);
+        if (c == '\n') {
+            line++;
+            column = 1;
+        } else {
+            column++;
+        }
+        return c;
     }
 
     private boolean match(char expected) {
-        if (isAtEnd())
-            return false;
-        if (src.charAt(pos) != expected)
-            return false;
-        pos++;
+        if (isAtEnd()) return false;
+        if (input.charAt(pos) != expected) return false;
+        advance();
         return true;
+    }
+
+    private void consumeWhitespace() {
+        while (!isAtEnd() && Character.isWhitespace(peek())) {
+            advance();
+        }
+    }
+
+    private String readIdentifier() {
+        StringBuilder sb = new StringBuilder();
+        while (!isAtEnd() &&
+              (Character.isLetterOrDigit(peek()) || peek() == '_')) {
+            sb.append(advance());
+        }
+        return sb.toString();
+    }
+
+    private TokenType keywordOrIdentifier(String s) {
+        return switch (s) {
+            case "roles"   -> TokenType.ROLES;
+            case "Enc"     -> TokenType.ENC;
+            case "Dec"     -> TokenType.DEC;
+            case "Mac"     -> TokenType.MAC;
+            case "Sign"    -> TokenType.SIGN;
+            case "Vrfy"    -> TokenType.VRFY;
+            case "Hash"    -> TokenType.HASH;
+            case "shared"  -> TokenType.SHARED;
+            case "public"  -> TokenType.PUBLIC;
+            case "private" -> TokenType.PRIVATE;
+            case "key"     -> TokenType.KEY;
+            case "assert"  -> TokenType.ASSERT;
+            case "secret"  -> TokenType.SECRET;
+            default        -> TokenType.IDENTIFIER;
+        };
+    }
+
+    private ParseException error(String msg, int line, int col) {
+        return new ParseException(
+            "Lexer error at line " + line + ", column " + col + ": " + msg,
+            null
+        );
     }
 }

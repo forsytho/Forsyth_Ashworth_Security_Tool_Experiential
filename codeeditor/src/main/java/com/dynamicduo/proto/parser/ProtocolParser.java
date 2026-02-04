@@ -55,16 +55,14 @@ import java.util.List;
  */
 public class ProtocolParser {
 
-    private final List<Token> tokens = new ArrayList<>();
+    private final List<Token> tokens;
     private int current = 0;
 
-    public ProtocolParser(Lexer lexer) {
-        // I pull all tokens up front so it is easy to peek / lookahead.
-        Token t;
-        do {
-            t = lexer.nextToken();
-            tokens.add(t);
-        } while (t.getType() != TokenType.EOF);
+    /**
+     * Updated constructor: pulls all tokens using lexer.tokenize()
+     */
+    public ProtocolParser(Lexer lexer) throws ParseException {
+        this.tokens = lexer.tokenize(); // <-- matches your new Lexer
     }
 
     /** Entry point: parse a ProtocolNode or throw ParseException on error. */
@@ -74,9 +72,6 @@ public class ProtocolParser {
         ProtocolNode proto = new ProtocolNode(roles);
 
         // 2) zero or more key declarations
-        //    shared key K_AB: Alice, Bob
-        //    public key pkA: Alice
-        //    private key skA: Alice
         while (check(TokenType.SHARED) || check(TokenType.PUBLIC) || check(TokenType.PRIVATE)) {
             if (match(TokenType.SHARED)) {
                 proto.addKeyDecl(sharedKeyDecl());
@@ -87,14 +82,17 @@ public class ProtocolParser {
             }
         }
 
-    // 3) messages
-    while (peek().getType() != TokenType.EOF) {
-        MessageSendNode msg = message();
-        proto.addMessage(msg);
-    }
-    return proto;
-}
+        // 3) messages
+       while (check(TokenType.IDENTIFIER)) {
+            MessageSendNode msg = message();
+            proto.addMessage(msg);
+        }
 
+
+        // 4) consume EOF explicitly (cleaner errors if trailing garbage exists)
+        consume(TokenType.EOF, "Expected end of input.");
+        return proto;
+    }
 
     // --------------------------------------------------------------------
     // Top-level pieces
@@ -102,11 +100,11 @@ public class ProtocolParser {
 
     // rolesDecl → "roles" ":" IDENT ( "," IDENT )* ;
     private RoleDeclNode rolesDecl() throws ParseException {
-        consume(TokenType.ROLES, "Expected 'roles' declaration.");
-        consume(TokenType.COLON, "Expected ':' after 'roles'.");
+        consume(TokenType.ROLES, "Expected 'roles' declaration (example: roles: Alice, Bob).");
+        consume(TokenType.COLON, "Expected ':' after 'roles' (example: roles: Alice, Bob).");
 
         RoleDeclNode roles = new RoleDeclNode();
-        roles.addRole(identifier("Expected role name."));
+        roles.addRole(identifier("Expected role name after 'roles:'."));
 
         while (match(TokenType.COMMA)) {
             roles.addRole(identifier("Expected role name after ','."));
@@ -116,10 +114,10 @@ public class ProtocolParser {
 
     // message → IDENT ARROW IDENT ":" stmt ;
     private MessageSendNode message() throws ParseException {
-        IdentifierNode sender = identifier("Expected sender identifier.");
-        consume(TokenType.ARROW, "Expected '->' after sender.");
-        IdentifierNode receiver = identifier("Expected receiver identifier.");
-        consume(TokenType.COLON, "Expected ':' after receiver.");
+        IdentifierNode sender = identifier("Expected sender identifier at start of message.");
+        consume(TokenType.ARROW, "Expected '->' after sender (example: Alice -> Bob: ...).");
+        IdentifierNode receiver = identifier("Expected receiver identifier after '->'.");
+        consume(TokenType.COLON, "Expected ':' after receiver (example: Alice -> Bob: stmt).");
         SyntaxNode body = stmt();
         return new MessageSendNode(sender, receiver, body);
     }
@@ -129,12 +127,9 @@ public class ProtocolParser {
     // --------------------------------------------------------------------
 
     // stmt → IDENT "=" expr | expr ;
-    //
-    // I allow either an assignment (c = Enc(...)) or a bare expression
-    // (just sending a value directly).
     private SyntaxNode stmt() throws ParseException {
         if (check(TokenType.IDENTIFIER) && checkNext(TokenType.EQUAL)) {
-            IdentifierNode target = identifier("Expected variable name.");
+            IdentifierNode target = identifier("Expected variable name before '='.");
             consume(TokenType.EQUAL, "Expected '=' after variable.");
             SyntaxNode value = expr();
             return new AssignNode(target, value);
@@ -143,73 +138,45 @@ public class ProtocolParser {
     }
 
     // expr → concatExpr ;
-    //
-    // I keep expr() as a separate method in case I want to add more
-    // precedence levels later.
     private SyntaxNode expr() throws ParseException {
         return concatExpr();
     }
 
     // concatExpr → cryptoExpr ( "||" cryptoExpr )* ;
-    //
-    // I treat "||" as left-associative:
-    //   a || b || c parses as Concat(Concat(a, b), c)
     private SyntaxNode concatExpr() throws ParseException {
         SyntaxNode left = cryptoExpr();
-        while (match(TokenType.CONCAT)) { // token for "||"
+        while (match(TokenType.CONCAT)) {
             SyntaxNode right = cryptoExpr();
             left = new ConcatNode(left, right);
         }
         return left;
     }
 
-    // cryptoExpr → encExpr
-    //            | macExpr
-    //            | signExpr
-    //            | verifyExpr
-    //            | hashExpr
-    //            | IDENT
-    //
-    // This is the base expression layer where I dispatch based on which
-    // crypto keyword appears, or fall back to a bare identifier.
+    // cryptoExpr → ENC | MAC | SIGN | VRFY | HASH | IDENT
     private SyntaxNode cryptoExpr() throws ParseException {
-        if (match(TokenType.ENC)) {
-            return encExprAfterKeyword();
-        }
-        if (match(TokenType.MAC)) {
-            return macExprAfterKeyword();
-        }
-        if (match(TokenType.SIGN)) {
-            return signExprAfterKeyword();
-        }
-        if (match(TokenType.VRFY)) {
-            return verifyExprAfterKeyword();
-        }
-        if (match(TokenType.HASH)) { // "H"
-            return hashExprAfterKeyword();
-        }
+        if (match(TokenType.ENC))  return encExprAfterKeyword();
+        if (match(TokenType.MAC))  return macExprAfterKeyword();
+        if (match(TokenType.SIGN)) return signExprAfterKeyword();
+        if (match(TokenType.VRFY)) return verifyExprAfterKeyword();
+        if (match(TokenType.HASH)) return hashExprAfterKeyword();
 
         if (check(TokenType.IDENTIFIER)) {
             return identifier("Expected identifier in expression.");
         }
 
-        throw error(peek(), "Expected expression.");
+        throw error(peek(), "Expected expression (identifier, Enc(...), Mac(...), Sign(...), Vrfy(...), Hash(...)).");
     }
 
     // encExpr → "Enc" "(" expr "," expr ")" ;
-    //
-    // I allow general expressions for key and message, but for now I require
-    // the key to be an identifier so the analyzer can treat it as a simple
-    // key symbol.
     private SyntaxNode encExprAfterKeyword() throws ParseException {
         consume(TokenType.LPAREN, "Expected '(' after 'Enc'.");
         SyntaxNode keyExpr = expr();
-        consume(TokenType.COMMA, "Expected ',' between key and message inside Enc.");
+        consume(TokenType.COMMA, "Expected ',' between key and message inside Enc(key, msg).");
         SyntaxNode msgExpr = expr();
         consume(TokenType.RPAREN, "Expected ')' after Enc(...).");
 
         if (!(keyExpr instanceof IdentifierNode keyId)) {
-            throw error(previous(), "Encryption key must be an identifier.");
+            throw error(previous(), "Encryption key must be an identifier (example: Enc(Kab, m)).");
         }
         return new EncryptExprNode(keyId, msgExpr);
     }
@@ -217,89 +184,94 @@ public class ProtocolParser {
     // macExpr → "Mac" "(" IDENT "," expr ")" ;
     private SyntaxNode macExprAfterKeyword() throws ParseException {
         consume(TokenType.LPAREN, "Expected '(' after 'Mac'.");
-        IdentifierNode key = identifier("Expected MAC key identifier.");
-        consume(TokenType.COMMA, "Expected ',' between key and message inside Mac.");
+        IdentifierNode key = identifier("Expected MAC key identifier (example: Mac(Kab, m)).");
+        consume(TokenType.COMMA, "Expected ',' between key and message inside Mac(key, msg).");
         SyntaxNode msgExpr = expr();
         consume(TokenType.RPAREN, "Expected ')' after Mac(...).");
         return new MacExprNode(key, msgExpr);
     }
 
-    // hashExpr → "H" "(" expr ")" ;
+    // hashExpr → "Hash" "(" expr ")" ;
     private SyntaxNode hashExprAfterKeyword() throws ParseException {
-        consume(TokenType.LPAREN, "Expected '(' after 'H'.");
+        consume(TokenType.LPAREN, "Expected '(' after 'Hash'.");
         SyntaxNode inner = expr();
-        consume(TokenType.RPAREN, "Expected ')' after H(...).");
+        consume(TokenType.RPAREN, "Expected ')' after Hash(...).");
         return new HashExprNode(inner);
     }
 
     // signExpr → "Sign" "(" IDENT "," expr ")" ;
     private SyntaxNode signExprAfterKeyword() throws ParseException {
         consume(TokenType.LPAREN, "Expected '(' after 'Sign'.");
-        IdentifierNode sk = identifier("Expected signing key identifier.");
-        consume(TokenType.COMMA, "Expected ',' between signing key and message inside Sign.");
+        IdentifierNode sk = identifier("Expected signing key identifier (example: Sign(skA, m)).");
+        consume(TokenType.COMMA, "Expected ',' between signing key and message inside Sign(key, msg).");
         SyntaxNode msgExpr = expr();
         consume(TokenType.RPAREN, "Expected ')' after Sign(...).");
         return new SignExprNode(sk, msgExpr);
     }
 
-    // verifyExpr → "Verify" "(" IDENT "," expr "," expr ")" ;
+    // verifyExpr → "Vrfy" "(" IDENT "," expr "," expr ")" ;
     private SyntaxNode verifyExprAfterKeyword() throws ParseException {
-        consume(TokenType.LPAREN, "Expected '(' after 'Verify'.");
-        IdentifierNode pk = identifier("Expected public key identifier.");
-        consume(TokenType.COMMA, "Expected ',' after public key in Verify.");
+        consume(TokenType.LPAREN, "Expected '(' after 'Vrfy'.");
+        IdentifierNode pk = identifier("Expected public key identifier (example: Vrfy(pkA, m, sig)).");
+        consume(TokenType.COMMA, "Expected ',' after public key in Vrfy(key, msg, sig).");
         SyntaxNode msgExpr = expr();
-        consume(TokenType.COMMA, "Expected ',' after message in Verify.");
+        consume(TokenType.COMMA, "Expected ',' after message in Vrfy(key, msg, sig).");
         SyntaxNode sigExpr = expr();
-        consume(TokenType.RPAREN, "Expected ')' after Verify(...).");
+        consume(TokenType.RPAREN, "Expected ')' after Vrfy(...).");
         return new VerifyExprNode(pk, msgExpr, sigExpr);
     }
 
-    // sharedKeyDecl → "shared" "key" IDENTIFIER ":" idList ;
+    // --------------------------------------------------------------------
+    // Key declarations
+    // --------------------------------------------------------------------
+
+    // sharedKeyDecl → "shared" "key" IDENT ":" idList ;
     private KeyDeclNode sharedKeyDecl() throws ParseException {
-        // we have already consumed 'shared'
-        consume(TokenType.KEY, "Expected 'key' after 'shared'.");
+        consume(TokenType.KEY, "Expected 'key' after 'shared' (example: shared key Kab: Alice, Bob).");
         Token keyIdent = consume(TokenType.IDENTIFIER, "Expected key name after 'shared key'.");
         consume(TokenType.COLON, "Expected ':' after shared key name.");
-        List<String> owners = idList();
+        List<String> owners = idList("Expected at least one owner role after ':'.");
         return new KeyDeclNode(KeyKind.SHARED, keyIdent.getLexeme(), owners);
     }
 
-    // publicKeyDecl → "public" "key" IDENTIFIER ":" IDENTIFIER ;
+    // publicKeyDecl → "public" "key" IDENT ":" IDENT ;
     private KeyDeclNode publicKeyDecl() throws ParseException {
-        // we have already consumed 'public'
-        consume(TokenType.KEY, "Expected 'key' after 'public'.");
+        consume(TokenType.KEY, "Expected 'key' after 'public' (example: public key pkA: Alice).");
         Token keyIdent = consume(TokenType.IDENTIFIER, "Expected key name after 'public key'.");
         consume(TokenType.COLON, "Expected ':' after public key name.");
         Token ownerIdent = consume(TokenType.IDENTIFIER, "Expected owner role after ':'.");
+
         List<String> owners = new ArrayList<>();
         owners.add(ownerIdent.getLexeme());
         return new KeyDeclNode(KeyKind.PUBLIC, keyIdent.getLexeme(), owners);
     }
 
-    // privateKeyDecl → "private" "key" IDENTIFIER ":" IDENTIFIER ;
+    // privateKeyDecl → "private" "key" IDENT ":" IDENT ;
     private KeyDeclNode privateKeyDecl() throws ParseException {
-        // we have already consumed 'private'
-        consume(TokenType.KEY, "Expected 'key' after 'private'.");
+        consume(TokenType.KEY, "Expected 'key' after 'private' (example: private key skA: Alice).");
         Token keyIdent = consume(TokenType.IDENTIFIER, "Expected key name after 'private key'.");
         consume(TokenType.COLON, "Expected ':' after private key name.");
         Token ownerIdent = consume(TokenType.IDENTIFIER, "Expected owner role after ':'.");
+
         List<String> owners = new ArrayList<>();
         owners.add(ownerIdent.getLexeme());
         return new KeyDeclNode(KeyKind.PRIVATE, keyIdent.getLexeme(), owners);
     }
 
     // idList → IDENTIFIER ( "," IDENTIFIER )*
-    private List<String> idList() throws ParseException {
+    private List<String> idList(String errIfMissing) throws ParseException {
         List<String> ids = new ArrayList<>();
-        Token first = consume(TokenType.IDENTIFIER, "Expected identifier.");
-        ids.add(first.getLexeme());
+
+        if (!check(TokenType.IDENTIFIER)) {
+            throw error(peek(), errIfMissing);
+        }
+
+        ids.add(consume(TokenType.IDENTIFIER, "Expected identifier.").getLexeme());
         while (match(TokenType.COMMA)) {
-            Token t = consume(TokenType.IDENTIFIER, "Expected identifier after ','.");
-            ids.add(t.getLexeme());
+            ids.add(consume(TokenType.IDENTIFIER, "Expected identifier after ','.").getLexeme());
         }
         return ids;
     }
-
 
     // --------------------------------------------------------------------
     // Helpers
@@ -319,32 +291,34 @@ public class ProtocolParser {
     }
 
     private Token consume(TokenType type, String message) throws ParseException {
-        if (check(type))
-            return advance();
+        if (check(type)) return advance();
         throw error(peek(), message);
     }
 
     private ParseException error(Token token, String message) {
-        return new ParseException(message + " Found: " + token, token.getLine());
+        // IMPORTANT: Your ParseException is (String, Token)
+        // and it already formats line+column using token.
+        return new ParseException(message, token);
     }
 
     private boolean check(TokenType type) {
-        if (isAtEnd())
-            return false;
+        if (type == TokenType.EOF) {
+            return peek().getType() == TokenType.EOF;
+        }
+        if (isAtEnd()) return false;
         return peek().getType() == type;
     }
 
+
     private boolean checkNext(TokenType type) {
-        if (isAtEnd())
-            return false;
-        if (tokens.get(current).getType() == TokenType.EOF)
-            return false;
-        return tokens.get(current + 1).getType() == type;
+        // Safe bounds check
+        int next = current + 1;
+        if (next >= tokens.size()) return false;
+        return tokens.get(next).getType() == type;
     }
 
     private Token advance() {
-        if (!isAtEnd())
-            current++;
+        if (!isAtEnd()) current++;
         return previous();
     }
 
