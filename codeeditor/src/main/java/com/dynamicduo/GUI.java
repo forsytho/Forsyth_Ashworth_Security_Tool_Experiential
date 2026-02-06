@@ -24,6 +24,7 @@ import com.dynamicduo.proto.parser.ProtocolParser;
 import com.dynamicduo.proto.parser.ParseException;
 import com.dynamicduo.proto.ast.ProtocolNode;
 import com.dynamicduo.proto.render.SequenceDiagramFromAst;
+import com.dynamicduo.proto.analyzer.VerificationWarningAnalyzer;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -391,8 +392,15 @@ public class GUI extends JFrame implements KeyListener {
         svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
         analysisStr = KnowledgeAnalyzer.analyzeToString(tree);
 
+        // ---- Warnings (Layer 1) ----
+        java.util.List<String> warns = VerificationWarningAnalyzer.analyze(tree);
+        StringBuilder wsb = new StringBuilder();
+        for (String w : warns) wsb.append(w).append("\n");
+
+        // Keep "errors" clean, but show warnings too (fast version)
+        errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
         executed = true;
-        errorArea.setText("No errors detected.");
+        
 
     } catch (ParseException pe) {
         // Your ParseException already includes line+column+found token in getMessage()
