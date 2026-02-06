@@ -29,8 +29,8 @@ import java.util.List;
 public class ProtocolNode extends SyntaxNode {
     private final RoleDeclNode roles;
     private final List<MessageSendNode> messages = new ArrayList<>();
-
     private final List<KeyDeclNode> keyDecls = new ArrayList<>();
+    private final List<NonceDeclNode> nonceDecls = new ArrayList<>();
 
     public ProtocolNode(RoleDeclNode roles) {
         this.roles = roles;
@@ -54,6 +54,14 @@ public class ProtocolNode extends SyntaxNode {
 
     public void addKeyDecl(KeyDeclNode decl) {
         keyDecls.add(decl);
+    }
+
+    public List<NonceDeclNode> getNonceDecls() {
+        return nonceDecls;
+    }
+
+    public void addNonceDecl(NonceDeclNode decl) {
+        nonceDecls.add(decl);
     }
 
     @Override

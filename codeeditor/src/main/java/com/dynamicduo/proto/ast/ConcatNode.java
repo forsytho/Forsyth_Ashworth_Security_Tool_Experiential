@@ -39,8 +39,9 @@ public final class ConcatNode extends SyntaxNode {
 
     @Override
     public String label() {
-        return "Concat";
+        return "(" + left.label() + " || " + right.label() + ")";
     }
+
 
     @Override
     public List<SyntaxNode> children() {

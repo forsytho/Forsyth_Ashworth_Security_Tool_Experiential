@@ -42,5 +42,5 @@ public final class KeyDeclNode extends SyntaxNode {
     public List<String> getOwners() { return owners; }
 
     @Override
-    public String label() { return keyName; }
+    public String label() { return kind + ": " + keyName; }
 }

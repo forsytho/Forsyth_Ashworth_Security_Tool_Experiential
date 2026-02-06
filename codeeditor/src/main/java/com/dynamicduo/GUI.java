@@ -374,60 +374,41 @@ public class GUI extends JFrame implements KeyListener {
 
         runBtn.addActionListener(e -> {
 
-    String input = codeArea.getText();
+            String input = codeArea.getText();
+            Lexer lexer = new Lexer(input);
+            ProtocolParser parser = new ProtocolParser(lexer);
 
-    try {
-        // Build lexer + parser INSIDE try, because ProtocolParser(lexer) can throw now
-        Lexer lexer = new Lexer(input);
-        ProtocolParser parser = new ProtocolParser(lexer);
+            try {
+                ProtocolNode tree = parser.parse();
 
-        ProtocolNode tree = parser.parse();
+                System.out.println("=== AST ===");
+                System.out.println(tree.pretty());
 
-        System.out.println("=== AST ===");
-        System.out.println(tree.pretty());
+                lastProtocol = tree;
 
-        lastProtocol = tree;
+                svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
+                analysisStr = KnowledgeAnalyzer.analyzeToString(tree);
 
-        svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
-        analysisStr = KnowledgeAnalyzer.analyzeToString(tree);
+                executed = true;
+                errorArea.setText("No errors detected.");
 
-        executed = true;
-        errorArea.setText("No errors detected.");
-
-    } catch (ParseException pe) {
-        // Your ParseException already includes line+column+found token in getMessage()
-        System.err.println("Parse error: " + pe.getMessage());
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(pe.getMessage());
-
-        // If we have a token, add explicit location and lexeme too (optional)
-        if (pe.token != null) {
-            sb.append("\nAt line ").append(pe.token.getLine())
-              .append(", column ").append(pe.token.getColumn());
-
-            String lex = pe.token.getLexeme();
-            if (lex != null && !lex.isEmpty()) {
-                sb.append("\nFound: '").append(lex).append("'");
+            } catch (ParseException pe) {
+                System.err.println("Parse error: " + pe.getMessage());
+                System.err.println("Line: " + pe.getLine());
+                errorArea.setText("Parse error: " + pe.getMessage() + "\nLine: " + pe.getLine());
+                executed = false;
+            } catch (Exception re) {
+                System.err.println("Render failed: " + re.getMessage());
+                errorArea.setText("Render failed: " + re.getMessage());
+                executed = false;
             }
-        }
 
-        errorArea.setText(sb.toString());
-        executed = false;
+            if (executed) {
+                svgStr = svgStr.replace("stroke=\"transparent\"", "stroke=\"none\"");
+                switchMode("svg");
+            }
 
-    } catch (Exception ex) {
-        System.err.println("Run failed: " + ex.getMessage());
-        errorArea.setText("Run failed: " + ex.getMessage());
-        executed = false;
-    }
-
-    if (executed) {
-        svgStr = svgStr.replace("stroke=\"transparent\"", "stroke=\"none\"");
-        switchMode("svg");
-    }
-
-});
-
+        });
 
         switchMode("message");
     }

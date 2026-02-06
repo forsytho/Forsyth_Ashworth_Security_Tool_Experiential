@@ -33,6 +33,7 @@ public enum TokenType {
     SIGN,  // signature
     VRFY,  // verify signature
     HASH,  // cryptographic hash
+    NONCE, // nonce generation
 
     SHARED, // shared key declaration
     PUBLIC,

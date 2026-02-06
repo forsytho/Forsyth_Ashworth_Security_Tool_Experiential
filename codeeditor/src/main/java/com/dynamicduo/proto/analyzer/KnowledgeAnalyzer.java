@@ -54,16 +54,13 @@ import java.util.*;
  *       If P knows Enc(k, m) (as an opaque term) and also knows k (from
  *       somewhere else as an identifier), then P learns m as a symbolic
  *       identifier.
- *
- *   - The analyzer does NOT currently “open up” concatenations. Even if P learns a
- *     Concat(m1, 0) term, that stays as one opaque blob from the point of
- *     view of this analyzer. This matches the idea that seeing a bitstring
- *     does not automatically tell me which variable it came from.
  */
 public final class KnowledgeAnalyzer {
 
     // Label for the implicit eavesdropping adversary.
     private static final String ADVERSARY = "Adversary";
+    private record EncTerm(String keyName, SyntaxNode plaintext) {}
+
 
     private KnowledgeAnalyzer() {
         // Utility class
@@ -96,15 +93,13 @@ public final class KnowledgeAnalyzer {
      *  - Enc(key, msgExpr): we record only the ciphertext symbol
      *      Enc(keyName, msgLabel)
      *    in encrypts; no visibility of msgExpr’s internals.
-     *  - Concat(left, right): treated as a single symbol "(leftLabel || rightLabel)"
-     *    with no automatic visibility of left/right.
      *  - Mac, Hash, Sign, Verify: treated as opaque symbols, added to identifiers
      *    so they appear in the knowledge summary but do not enable inference.
      */
     private static void collectTerms(
             SyntaxNode node,
             Set<String> identifiers,
-            Set<String> encrypts) {
+            Set<EncTerm> encrypts) {
 
         // Bare identifier in the clear.
         if (node instanceof IdentifierNode id) {
@@ -114,28 +109,21 @@ public final class KnowledgeAnalyzer {
         // Encryption: Enc(keyExpr, msgExpr)
         else if (node instanceof EncryptExprNode enc) {
             String kName = enc.getKey().getName();
-            // The message is a general expression, so we use its label as a symbol.
-            String mSym  = enc.getMessage().label();
 
-            String term = "Enc(" + kName + ", " + mSym + ")";
-            encrypts.add(term);
-
-            // Do NOT recurse into enc.getMessage() for visibility.
-            // Ciphertext is opaque unless the key is known and the decryption
-            // inference rule fires later.
+            // Store the actual plaintext AST (so we can open concat after decrypt)
+            encrypts.add(new EncTerm(kName, enc.getMessage()));
         }
 
         // Concatenation: left || right
         else if (node instanceof ConcatNode cat) {
-            String leftLabel  = cat.getLeft().label();
-            String rightLabel = cat.getRight().label();
-            String sym = "(" + leftLabel + " || " + rightLabel + ")";
-
-            // Treat the entire concatenation as an opaque symbol.
+            // Optional: keep a readable “whole thing” symbol for display
+            String sym = "(" + cat.getLeft().label() + " || " + cat.getRight().label() + ")";
             identifiers.add(sym);
 
-            // Do NOT recurse into left/right; that matches the "opaque blob" model.
-        }
+            // FIX: concatenation is transparent on the wire
+            collectTerms(cat.getLeft(), identifiers, encrypts);
+            collectTerms(cat.getRight(), identifiers, encrypts);
+        }   
 
         // MAC: Mac(keyId, msgExpr)
         else if (node instanceof MacExprNode mac) {
@@ -182,6 +170,8 @@ public final class KnowledgeAnalyzer {
             identifiers.add(a.getTarget().getName());
             collectTerms(a.getValue(), identifiers, encrypts);
         }
+
+
     }
 
 
@@ -195,7 +185,7 @@ public final class KnowledgeAnalyzer {
     public static String analyzeToString(ProtocolNode proto) {
 
         Map<String, Set<String>> knows = new LinkedHashMap<>();
-        Map<String, Set<String>> encryptTerms = new LinkedHashMap<>();
+        Map<String, Set<EncTerm>> encryptTerms = new LinkedHashMap<>();
 
         // 1) Initialize knowledge map for all declared roles in the protocol.
         for (IdentifierNode id : proto.getRoles().getRoles()) {
@@ -249,6 +239,16 @@ public final class KnowledgeAnalyzer {
             }
         }
 
+        // 2.5) Seed knowledge from nonce declarations: nonce known only to its owner (generator)
+        for (NonceDeclNode nd : proto.getNonceDecls()) {
+            String nonceName = nd.getName();
+            String owner = nd.getOwner();
+            if (knows.containsKey(owner)) {
+                knows.get(owner).add(nonceName);
+            }
+        }
+
+
         // 3) Initialize encryptTerms map (opaque Enc(...) terms per principal)
         for (String p : knows.keySet()) {
             encryptTerms.put(p, new LinkedHashSet<>());
@@ -262,7 +262,7 @@ public final class KnowledgeAnalyzer {
 
             // 4.1) What is visible on the wire (existing visibility rules)
             Set<String> visibleIds = new LinkedHashSet<>();
-            Set<String> encs       = new LinkedHashSet<>();
+            Set<EncTerm> encs       = new LinkedHashSet<>();
             collectTerms(msg.getBody(), visibleIds, encs);
 
             // 4.2) What the sender must know to BUILD this message (keys, nonces, etc.)
@@ -288,32 +288,28 @@ public final class KnowledgeAnalyzer {
             changed = false;
             for (String p : knows.keySet()) {
                 Set<String> terms = knows.get(p);
-                Set<String> encs  = encryptTerms.get(p);
+                Set<EncTerm> encs = encryptTerms.get(p);
 
-                for (String enc : encs) {
-                    if (!enc.startsWith("Enc(") || !enc.endsWith(")")) continue;
+                for (EncTerm enc : encs) {
 
-                    String inside = enc.substring(4, enc.length() - 1);
-                    String[] parts = inside.split(",", 2);
-                    if (parts.length != 2) continue;
+                    String k = enc.keyName();
+                    SyntaxNode plaintext = enc.plaintext();
 
-                    String k = parts[0].trim();   // could be K_AB or pkK
-                    String m = parts[1].trim();   // e.g., M1
-
-                    // NEW: if encryption used a PUBLIC key, require the matching PRIVATE key to decrypt
+                    // If encryption used a PUBLIC key, require matching PRIVATE key to decrypt
                     String requiredKey = k;
                     KeyKind kind = keyKinds.get(k);
                     if (kind == KeyKind.PUBLIC) {
-                        String sk = matchingPrivateKeyName(k); // pkK -> skK
+                        String sk = matchingPrivateKeyName(k); // pkX -> skX
                         if (sk != null) requiredKey = sk;
                     }
 
-                    // Only learn *bare* identifiers as plaintext from decryption
-                    if (canDecrypt(terms, requiredKey, keyKinds) && !terms.contains(m) && isBareIdentifier(m)) {
-                        terms.add(m);
-                        changed = true;
+                    if (canDecrypt(terms, requiredKey, keyKinds)) {
+                        if (learnFromDecryptedPlaintext(plaintext, terms)) {
+                            changed = true;
+                        }
                     }
                 }
+
             }
         } while (changed);
 
@@ -466,6 +462,25 @@ public final class KnowledgeAnalyzer {
 
     }
 
+    private static boolean learnFromDecryptedPlaintext(SyntaxNode node, Set<String> out) {
+        boolean changed = false;
+
+        if (node instanceof IdentifierNode id) {
+            return out.add(id.getName());
+        }
+
+        if (node instanceof ConcatNode cat) {
+            changed |= learnFromDecryptedPlaintext(cat.getLeft(), out);
+            changed |= learnFromDecryptedPlaintext(cat.getRight(), out);
+            return changed;
+        }
+
+        // For now, keep other structured plaintext as a single observed blob.
+        // (You can expand later if you want.)
+        return out.add(node.label());
+    }
+
+
 
     /**
      * Heuristic: treat anything with parentheses or "||" as a structured term
@@ -551,7 +566,7 @@ public final class KnowledgeAnalyzer {
     private static boolean canDecrypt(Set<String> terms, String keyName, Map<String, KeyKind> keyKinds) {
         if (!terms.contains(keyName)) return false;
 
-        // If you have keyKinds available, this is the cleanest:
+        // If we have keyKinds available, this is the cleanest:
         KeyKind kind = keyKinds.get(keyName);
         if (kind != null) {
             return kind == KeyKind.SHARED || kind == KeyKind.PRIVATE;
@@ -584,6 +599,5 @@ public final class KnowledgeAnalyzer {
         }
         return null;
     }
-
 }
 

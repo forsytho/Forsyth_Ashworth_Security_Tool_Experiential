@@ -18,29 +18,17 @@
 */
 
 package com.dynamicduo.proto.parser;
-import com.dynamicduo.proto.lexer.Token;
 
 /** Thrown when the parser hits unexpected tokens. */
 public class ParseException extends Exception {
-    public final Token token;
+    private final int line;
 
-    public ParseException(String message, Token token) {
+    public ParseException(String message, int line) {
         super(message);
-        this.token = token;
+        this.line = line;
     }
 
-    @Override
-    public String getMessage() {
-        if (token == null) {
-            return super.getMessage();
-        }
-        return String.format(
-            "Syntax error at line %d, column %d: %s (found '%s')",
-            token.getLine(),
-            token.getColumn(),
-            super.getMessage(),
-            token.getLexeme()
-        );
+    public int getLine() {
+        return line;
     }
 }
-

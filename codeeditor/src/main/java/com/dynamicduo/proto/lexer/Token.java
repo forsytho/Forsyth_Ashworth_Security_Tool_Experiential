@@ -29,14 +29,11 @@ public class Token {
     private final TokenType type;
     private final String lexeme;
     private final int line;
-    private final int column;
 
-    public Token(TokenType type, String lexeme, int line, int column) {
+    public Token(TokenType type, String lexeme, int line) {
         this.type = type;
         this.lexeme = lexeme;
         this.line = line;
-        this.column = column;
-
     }
 
     public TokenType getType() {
@@ -51,12 +48,8 @@ public class Token {
         return line;
     }
 
-    public int getColumn() {
-        return column;
-    }
-
     @Override
     public String toString() {
-        return type + " '" + lexeme + "' (line " + line + ", column " + column + ")";
+        return String.format("%-10s '%s' (line %d)", type, lexeme, line);
     }
 }

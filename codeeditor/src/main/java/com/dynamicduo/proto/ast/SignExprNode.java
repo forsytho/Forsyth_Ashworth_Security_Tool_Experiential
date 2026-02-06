@@ -40,8 +40,9 @@ public final class SignExprNode extends SyntaxNode {
 
     @Override
     public String label() {
-        return "Sign(" + sk.getName() + ", ...)";
+        return "Sign(" + sk.label() + ", " + message.label() + ")";
     }
+
 
     @Override
     public List<SyntaxNode> children() {
