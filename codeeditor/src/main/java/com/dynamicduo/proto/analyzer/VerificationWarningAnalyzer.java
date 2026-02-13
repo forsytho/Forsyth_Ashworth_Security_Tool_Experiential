@@ -93,7 +93,7 @@ public final class VerificationWarningAnalyzer {
                 verified.add(sigName);
 
                 if (!created.containsKey(sigName)) {
-                    warnings.add("Verification uses signature '" + sigName
+                    warnings.add("⚠ Verification uses signature '" + sigName
                             + "', but no earlier assignment like '" + sigName + " = Sign(...)' was found.");
                 }
             }

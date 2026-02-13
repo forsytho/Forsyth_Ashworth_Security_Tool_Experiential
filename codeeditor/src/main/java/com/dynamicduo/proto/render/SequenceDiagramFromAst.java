@@ -60,7 +60,6 @@ public final class SequenceDiagramFromAst {
      * @param outSvg Output SVG path, e.g. "pretty_protocol.svg"
      */
     public static String renderTwoParty(ProtocolNode proto) throws Exception {
-        // 1) Extract roles in declaration order
         List<String> roles = proto.getRoles().getRoles().stream()
                 .map(IdentifierNode::getName)
                 .collect(Collectors.toList());
@@ -73,60 +72,66 @@ public final class SequenceDiagramFromAst {
         String p1 = roles.get(0);
         String p2 = roles.get(1);
 
-        // 2) Messages define the rows
         List<MessageSendNode> msgs = proto.getMessages();
-        int numNodes = msgs.size() + 1; // lifeline points = messages + 1
+        int numNodes = msgs.size() + 1;
 
         String[] messages = new String[msgs.size()];
         String[] passer = new String[msgs.size()];
 
+        // Map placeholder -> latex
+        java.util.Map<String, String> latexMap = new java.util.LinkedHashMap<>();
+
         for (int i = 0; i < msgs.size(); i++) {
             MessageSendNode m = msgs.get(i);
-            messages[i] = labelFor(m.getBody()); // text on the arrow
-            passer[i] = m.getSender().getName(); // who sends this message
+
+            String placeholder = "__LATEX_" + i + "__";
+            messages[i] = placeholder;                 // what Graphviz will draw
+            latexMap.put(placeholder, latexFor(m.getBody())); // what we want instead
+
+            passer[i] = m.getSender().getName();
         }
 
-        // 3) Build the graph using your partner's SVG helper
         SVG svgBuilder = new SVG(numNodes, p1, p2, messages, passer);
 
-        // 4) Render that graph to an SVG file using graphviz-java
         String outSvg = Graphviz.fromGraph(svgBuilder.getGraph())
                 .render(Format.SVG)
                 .toString();
 
-        // System.out.println("[SequenceDiagramFromAst] Wrote SVG: "
-        // + new File(outSvg).getAbsolutePath());
+        // Post-process SVG: replace each placeholder text with LaTeX paths
+        outSvg = SvgLatexPostProcessor.replacePlaceholders(outSvg, latexMap, 16f);
+
         return outSvg;
     }
 
+
     // === label helper: reuse our encryption labeling logic ===
 
-    private static String labelFor(SyntaxNode body) {
+    private static String latexFor(SyntaxNode body) {
         if (body instanceof AssignNode a) {
-            return a.getTarget().getName() + " = " + labelFor(a.getValue());
+            return a.getTarget().getName() + " = " + latexFor(a.getValue());
         }
         if (body instanceof EncryptExprNode e) {
-            return "Enc(" + e.getKey().getName() + ", " + labelFor(e.getMessage()) + ")";
+            return "\\mathrm{Enc}\\left(" + e.getKey().getName() + ",\\," + latexFor(e.getMessage()) + "\\right)";
         }
         if (body instanceof MacExprNode m) {
-            return "Mac(" + m.getKey().getName() + ", " + labelFor(m.getMessage()) + ")";
+            return "\\mathrm{Mac}\\left(" + m.getKey().getName() + ",\\," + latexFor(m.getMessage()) + "\\right)";
         }
         if (body instanceof SignExprNode s) {
-            return "Sign(" + s.getSigningKey().getName() + ", " + labelFor(s.getMessage()) + ")";
+            return "\\mathrm{Sign}\\left(" + s.getSigningKey().getName() + ",\\," + latexFor(s.getMessage()) + "\\right)";
         }
         if (body instanceof VerifyExprNode v) {
-            return "Verify(" + v.getPublicKey().getName() + ", "
-                + labelFor(v.getMessage()) + ", "
-                + labelFor(v.getSignature()) + ")";
+            return "\\mathrm{Verify}\\left(" + v.getPublicKey().getName() + ",\\,"
+                    + latexFor(v.getMessage()) + ",\\," + latexFor(v.getSignature()) + "\\right)";
         }
         if (body instanceof HashExprNode h) {
-            return "H(" + labelFor(h.getInner()) + ")";
+            return "H\\left(" + latexFor(h.getInner()) + "\\right)";
         }
         if (body instanceof ConcatNode c) {
-            return labelFor(c.getLeft()) + " || " + labelFor(c.getRight());
+            return latexFor(c.getLeft()) + " \\parallel " + latexFor(c.getRight());
         }
-
-        // Fallback: use whatever the node itself thinks is a good label
-        return body.label();
+        if (body instanceof IdentifierNode id) {
+            return id.getName();
+        }
+        return body.label(); // fallback
     }
 }

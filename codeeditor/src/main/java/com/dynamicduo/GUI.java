@@ -49,6 +49,7 @@ import com.kitfox.svg.app.beans.SVGIcon;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 
+import com.dynamicduo.proto.analyzer.KeyMisuseWarningAnalyzer;
 import com.dynamicduo.proto.analyzer.KnowledgeAnalyzer;
 import com.dynamicduo.proto.codegen.JavaCodeGenerator;
 
@@ -393,9 +394,16 @@ public class GUI extends JFrame implements KeyListener {
         analysisStr = KnowledgeAnalyzer.analyzeToString(tree);
 
         // ---- Warnings (Layer 1) ----
-        java.util.List<String> warns = VerificationWarningAnalyzer.analyze(tree);
+        java.util.List<String> warns = new java.util.ArrayList<>();
+
+        warns.addAll(VerificationWarningAnalyzer.analyze(tree));
+        warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
+
         StringBuilder wsb = new StringBuilder();
         for (String w : warns) wsb.append(w).append("\n");
+
+        errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
+
 
         // Keep "errors" clean, but show warnings too (fast version)
         errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
