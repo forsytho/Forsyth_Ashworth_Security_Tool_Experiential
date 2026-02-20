@@ -188,7 +188,7 @@ public class GUI extends JFrame implements KeyListener {
 
         // Code Screen
         codeArea = new RSyntaxTextArea(20, 60);
-        codeArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_JAVA);
+        codeArea.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_NONE);
         codeArea.setCodeFoldingEnabled(true);
         codeArea.setAntiAliasingEnabled(true);
         codeArea.setFont(new Font("Consolas", Font.PLAIN, 14));
