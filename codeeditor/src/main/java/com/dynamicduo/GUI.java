@@ -24,6 +24,7 @@ import com.dynamicduo.proto.parser.ProtocolParser;
 import com.dynamicduo.proto.parser.ParseException;
 import com.dynamicduo.proto.ast.ProtocolNode;
 import com.dynamicduo.proto.render.SequenceDiagramFromAst;
+import com.dynamicduo.proto.analyzer.VerificationWarningAnalyzer;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -48,6 +49,7 @@ import com.kitfox.svg.app.beans.SVGIcon;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 
+import com.dynamicduo.proto.analyzer.KeyMisuseWarningAnalyzer;
 import com.dynamicduo.proto.analyzer.KnowledgeAnalyzer;
 import com.dynamicduo.proto.codegen.JavaCodeGenerator;
 
@@ -392,6 +394,7 @@ public class GUI extends JFrame implements KeyListener {
                 executed = true;
                 errorArea.setText("No errors detected.");
 
+<<<<<<< HEAD
             } catch (ParseException pe) {
                 System.err.println("Parse error: " + pe.getMessage());
                 System.err.println("Line: " + pe.getLine());
@@ -401,6 +404,40 @@ public class GUI extends JFrame implements KeyListener {
                 System.err.println("Render failed: " + re.getMessage());
                 errorArea.setText("Render failed: " + re.getMessage());
                 executed = false;
+=======
+        // ---- Warnings (Layer 1) ----
+        java.util.List<String> warns = new java.util.ArrayList<>();
+
+        warns.addAll(VerificationWarningAnalyzer.analyze(tree));
+        warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
+
+        StringBuilder wsb = new StringBuilder();
+        for (String w : warns) wsb.append(w).append("\n");
+
+        errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
+
+
+        // Keep "errors" clean, but show warnings too (fast version)
+        errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
+        executed = true;
+        
+
+    } catch (ParseException pe) {
+        // Your ParseException already includes line+column+found token in getMessage()
+        System.err.println("Parse error: " + pe.getMessage());
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(pe.getMessage());
+
+        // If we have a token, add explicit location and lexeme too (optional)
+        if (pe.token != null) {
+            sb.append("\nAt line ").append(pe.token.getLine())
+              .append(", column ").append(pe.token.getColumn());
+
+            String lex = pe.token.getLexeme();
+            if (lex != null && !lex.isEmpty()) {
+                sb.append("\nFound: '").append(lex).append("'");
+>>>>>>> Warnings-Analyzer
             }
 
             if (executed) {

@@ -55,14 +55,33 @@
     <dependency>
         <groupId>org.bouncycastle</groupId>
         <artifactId>bcprov-jdk18on</artifactId>
-        <version>1.78</version>
+        <version>1.79</version>
     </dependency>
 
     <!-- BouncyCastle PKIX/PGP (key formats, extra algorithms incl. ElGamal helpers) -->
     <dependency>
         <groupId>org.bouncycastle</groupId>
         <artifactId>bcpkix-jdk18on</artifactId>
-        <version>1.78</version>
+        <version>1.79</version>
+    </dependency>
+
+    <!-- JLaTeX  -->
+    <dependency>
+      <groupId>org.scilab.forge</groupId>
+      <artifactId>jlatexmath</artifactId>
+      <version>1.0.7</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.xmlgraphics</groupId>
+      <artifactId>batik-svggen</artifactId>
+      <version>1.17</version>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.apache.xmlgraphics</groupId>
+      <artifactId>batik-dom</artifactId>
+      <version>1.17</version>
     </dependency>
 
     <!-- Merrimack Utilities (local JAR in lib/) -->
@@ -74,6 +93,8 @@
     <scope>system</scope>
     <systemPath>${project.basedir}/lib/merrimackutil.jar</systemPath>
 </dependency>
+
+
 
 </dependencies>
 
@@ -140,3 +161,4 @@
     </plugins>
   </build>
 </project>
+
