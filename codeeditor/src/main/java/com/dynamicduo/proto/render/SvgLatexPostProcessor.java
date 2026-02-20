@@ -8,54 +8,67 @@ public final class SvgLatexPostProcessor {
 
     private SvgLatexPostProcessor() {}
 
-    /**
-     * Replaces <text ...>__LATEX_i__</text> with a positioned <g> containing LaTeX paths.
-     * Works with SVGSalamander because we no longer nest <g> inside <text>.
-     */
-    public static String replacePlaceholders(String svg,
-                                             Map<String, String> placeholderToLatex,
-                                             float fontSize) {
+    public static String replacePlaceholders(
+            String svg,
+            Map<String, String> placeholderToLatex,
+            float fontSize
+    ) {
+        for (Map.Entry<String, String> entry : placeholderToLatex.entrySet()) {
+            svg = replaceOne(svg, entry.getKey(), entry.getValue(), fontSize);
+        }
+        return svg;
+    }
 
-        for (Map.Entry<String, String> e : placeholderToLatex.entrySet()) {
-            String placeholder = e.getKey();
-            String latex = e.getValue();
+    private static String replaceOne(String svg, String placeholder, String latex, float fontSize) {
 
-            // Match <text ... x=".." y=".."...> __LATEX_i__ </text>
-            // We capture:
-            // 1) the whole <text ...> opening tag attributes
-            // 2) x
-            // 3) y
-            Pattern p = Pattern.compile(
-                    "<text([^>]*?)\\sx=\"([^\"]+)\"\\sy=\"([^\"]+)\"([^>]*)>\\s*"
-                            + Pattern.quote(placeholder)
-                            + "\\s*</text>",
-                    Pattern.CASE_INSENSITIVE
-            );
+        Pattern p = Pattern.compile(
+                "<text(?<attrs>[^>]*)\\sx=\"(?<x>[^\"]+)\"\\sy=\"(?<y>[^\"]+)\"(?<attrs2>[^>]*)>"
+                        + "(?<inner>[\\s\\S]*?)"
+                        + "</text>",
+                Pattern.CASE_INSENSITIVE
+        );
 
-            Matcher m = p.matcher(svg);
-            StringBuffer sb = new StringBuffer();
+        Matcher m = p.matcher(svg);
+        StringBuffer out = new StringBuffer();
 
-            while (m.find()) {
-                String x = m.group(2);
-                String y = m.group(3);
-
-                // Convert LaTeX -> SVG paths/group
-                String latexGroup = LatexSvg.toSvgGroup(latex, fontSize);
-
-                // Position it where the text was.
-                // Baseline tweak: translate up a bit so it sits like text.
-                String replacement =
-                        "<g transform=\"translate(" + x + "," + y + ") translate(0,-6)\">"
-                                + latexGroup
-                                + "</g>";
-
-                m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        while (m.find()) {
+            String inner = m.group("inner");
+            if (inner == null || !inner.contains(placeholder)) {
+                m.appendReplacement(out, Matcher.quoteReplacement(m.group(0)));
+                continue;
             }
 
-            m.appendTail(sb);
-            svg = sb.toString();
+            String xStr = m.group("x");
+            String yStr = m.group("y");
+
+            double x = parseDoubleSafe(xStr);
+            double y = parseDoubleSafe(yStr);
+
+            LatexSvg.PngFragment frag = LatexSvg.toPngDataUri(latex, fontSize, 3f);
+
+            double imgX = x - (frag.width / 2.0);
+            double imgY = y - (frag.height * 0.75);
+
+           String replacement =
+                   // <text ... x="..." y="...">
+                "<image xmlns=\"http://www.w3.org/2000/svg\" " +
+                "xmlns:xlink=\"http://www.w3.org/1999/xlink\" " +
+                "x=\"" + imgX + "\" " +
+                "y=\"" + imgY + "\" " +
+                "width=\"" + frag.width + "\" " +
+                "height=\"" + frag.height + "\" " +
+                "xlink:href=\"" + frag.dataUri + "\" " +
+                "href=\"" + frag.dataUri + "\"/>";
+
+            m.appendReplacement(out, Matcher.quoteReplacement(replacement));
         }
 
-        return svg;
+        m.appendTail(out);
+        return out.toString();
+    }
+
+    private static double parseDoubleSafe(String s) {
+        try { return Double.parseDouble(s); }
+        catch (Exception e) { return 0.0; }
     }
 }

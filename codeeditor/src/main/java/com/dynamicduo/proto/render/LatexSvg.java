@@ -3,46 +3,91 @@ package com.dynamicduo.proto.render;
 import org.scilab.forge.jlatexmath.TeXFormula;
 import org.scilab.forge.jlatexmath.TeXIcon;
 
-import org.apache.batik.dom.GenericDOMImplementation;
-import org.apache.batik.svggen.SVGGraphics2D;
-import org.w3c.dom.DOMImplementation;
-import org.w3c.dom.Document;
-
 import javax.swing.*;
 import java.awt.*;
-import java.io.StringWriter;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.util.Base64;
 
+import javax.imageio.ImageIO;
+
+/**
+ * LatexSvg
+ *
+ * Renders a LaTeX math string to a PNG data URI.
+ */
 public final class LatexSvg {
+
     private LatexSvg() {}
 
-    /** Returns an SVG fragment (<g>...</g>) with vector paths for LaTeX. */
-    public static String toSvgGroup(String latex, float fontSize) {
+    public static final class PngFragment {
+        public final String dataUri;
+        public final int width;   // display width in SVG pixels
+        public final int height;  // display height in SVG pixels
+
+        public PngFragment(String dataUri, int width, int height) {
+            this.dataUri = dataUri;
+            this.width = width;
+            this.height = height;
+        }
+    }
+
+    /**
+     * Render LaTeX to PNG data URI.
+     *
+     * @param latex    LaTeX math content (no $ needed)
+     * @param fontSize base font size (e.g. 18f)
+     * @param scale    oversampling factor (e.g. 2f or 3f). Render bigger, then display smaller.
+     */
+    public static PngFragment toPngDataUri(String latex, float fontSize, float scale) {
+        if (latex == null) latex = "";
+        if (scale <= 0f) scale = 1f;
+
         try {
+            // Build icon at higher resolution
             TeXFormula formula = new TeXFormula(latex);
-            TeXIcon icon = formula.createTeXIcon(TeXFormula.SERIF, fontSize);
+            TeXIcon icon = formula.createTeXIcon(TeXFormula.SERIF, fontSize * scale);
 
-            DOMImplementation impl = GenericDOMImplementation.getDOMImplementation();
-            String svgNS = "http://www.w3.org/2000/svg";
-            Document doc = impl.createDocument(svgNS, "svg", null);
+            int w = Math.max(1, icon.getIconWidth());
+            int h = Math.max(1, icon.getIconHeight());
 
-            SVGGraphics2D g2 = new SVGGraphics2D(doc);
-            g2.setSVGCanvasSize(new Dimension(icon.getIconWidth(), icon.getIconHeight()));
+            BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = img.createGraphics();
 
-            icon.paintIcon(new JLabel(), g2, 0, 0);
+            // High quality rendering hints
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
 
-            StringWriter sw = new StringWriter();
-            g2.stream(sw, true);
+            // Transparent background
+            g.setComposite(AlphaComposite.Src);
+            g.setColor(new Color(0, 0, 0, 0));
+            g.fillRect(0, 0, w, h);
 
-            String full = sw.toString();
-            int start = full.indexOf(">", full.indexOf("<svg"));
-            int end = full.lastIndexOf("</svg>");
-            String inner = (start >= 0 && end > start) ? full.substring(start + 1, end).trim() : "";
+            // Draw LaTeX in black
+            g.setColor(Color.BLACK);
+            icon.paintIcon(new JLabel(), g, 0, 0);
+            g.dispose();
 
-            return "<g class=\"latex\">" + inner + "</g>";
+            // Encode to PNG base64
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(img, "png", baos);
+            baos.flush();
+
+            String base64 = Base64.getEncoder().encodeToString(baos.toByteArray());
+            String uri = "data:image/png;base64," + base64;
+
+            // IMPORTANT: display size is scaled back down
+            int displayW = Math.max(1, Math.round(w / scale));
+            int displayH = Math.max(1, Math.round(h / scale));
+
+            return new PngFragment(uri, displayW, displayH);
+
         } catch (Exception e) {
-            // fallback: plain text inside a <text>
-            String safe = latex.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-            return "<g class=\"latex-fallback\"><text>" + safe + "</text></g>";
+            // Fallback: render an empty 1x1 transparent pixel
+            String uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=";
+            return new PngFragment(uri, 1, 1);
         }
     }
 }
