@@ -31,7 +31,7 @@ import java.util.*;
  * (Alice, Bob, etc.) and an implicit eavesdropper ("Adversary")
  * knows after a single run of the protocol.
  *
- * What this track:
+ * What this tracks:
  *   - For each principal P:
  *       knows[P]       = set of atomic terms P knows (K_AB, N_A, M_1, c, ...)
  *       cryptoTerms[P] = set of opaque structured terms P has seen
@@ -41,14 +41,13 @@ import java.util.*;
  *
  *   - When P sends or receives a message, P "sees":
  *       * identifiers that appear in the clear (not under crypto),
- *       * opaque crypto terms (Enc, Mac, H, Sign, Verify, Concat, ...).
+ *       * opaque crypto terms (Enc, Mac, H, Sign, Verify, ...).
  *
  *   - The adversary is assumed to see ALL messages (passive eavesdropper).
  *
- *   - Ciphertexts, MACs, hashes, signatures, and concatenations are opaque:
+ *   - Ciphertexts, MACs, hashes, signatures are opaque:
  *       * Seeing Enc(k, m) does not automatically reveal k or m.
- *       * Seeing m1 || 0 in the clear is treated as a single opaque Concat(...)
- *         term, not as separate identifiers m1 and 0.
+
  *
  *   - Decryption rule:
  *       If P knows Enc(k, m) (as an opaque term) and also knows k (from
@@ -60,6 +59,21 @@ public final class KnowledgeAnalyzer {
     // Label for the implicit eavesdropping adversary.
     private static final String ADVERSARY = "Adversary";
     private record EncTerm(String keyName, SyntaxNode plaintext) {}
+
+    private enum FreshnessStatus { FRESH, REPLAYABLE }
+    private enum FreshnessReason { NO_NONCE, NONCE_REUSED, NEW_NONCE }
+
+    private record FreshnessResult(
+            int index,
+            String sender,
+            String receiver,
+            String messageLabel,
+            FreshnessStatus status,
+            FreshnessReason reason,
+            Set<String> noncesInMessage,
+            Set<String> newNonces,
+            Set<String> reusedNonces
+    ) {}
 
 
     private KnowledgeAnalyzer() {
@@ -338,6 +352,10 @@ public final class KnowledgeAnalyzer {
         }
         sb.append("  - ").append(ADVERSARY).append(" (Passive Eavesdropper)\n\n");
 
+        // Freshness analysis (identify messages that contain fresh nonces vs. potential replays)
+        List<FreshnessResult> freshness = computeFreshness(proto);
+
+
         // We'll collect what the adversary learned for the final verdict here:
         Set<String> advSecretsForVerdict   = new LinkedHashSet<>();
         Set<String> advPlaintextForVerdict = new LinkedHashSet<>();
@@ -443,6 +461,33 @@ public final class KnowledgeAnalyzer {
         catastrophic.removeIf(t ->
             !(t.startsWith("K_") || t.startsWith("M") || t.startsWith("sk"))
         );
+
+        sb.append("--------------------------------------------------\n");
+        sb.append("MESSAGE FRESHNESS REPORT (Global Nonce Usage)\n");
+        sb.append("--------------------------------------------------\n");
+
+        if (freshness.isEmpty()) {
+            sb.append("(no messages)\n\n");
+        } else {
+            for (FreshnessResult fr : freshness) {
+                sb.append(fr.index()).append(". ")
+                .append(fr.sender()).append(" -> ").append(fr.receiver()).append(": ")
+                .append(fr.messageLabel()).append("\n");
+
+                if (fr.status() == FreshnessStatus.FRESH) {
+                    sb.append("   Fresh (new nonce: ").append(fr.newNonces()).append(")\n");
+                } else {
+                    if (fr.reason() == FreshnessReason.NO_NONCE) {
+                        sb.append("   Replayable (no nonce)\n");
+                    } else {
+                        sb.append("   Replay (nonce reused: ").append(fr.reusedNonces()).append(")\n");
+                    }
+                }
+                sb.append("\n");
+            }
+        }
+
+
 
         sb.append("--------------------------------------------------\n");
         sb.append("SECURITY VERDICT\n");
@@ -575,6 +620,76 @@ public final class KnowledgeAnalyzer {
         // Fallback heuristic if keyKinds doesn't contain it
         return keyName.startsWith("K_") || keyName.startsWith("sk");
     }
+
+    private static Set<String> declaredNonces(ProtocolNode proto) {
+        Set<String> out = new LinkedHashSet<>();
+        for (NonceDeclNode nd : proto.getNonceDecls()) {
+            out.add(nd.getName());
+        }
+        return out;
+    }
+
+    private static void collectNoncesInAst(SyntaxNode node, Set<String> nonceNames, Set<String> out) {
+        if (node == null) return;
+
+        if (node instanceof IdentifierNode id) {
+            String name = id.getName();
+            if (nonceNames.contains(name)) out.add(name);
+            return;
+        }
+
+        for (SyntaxNode child : node.children()) {
+            collectNoncesInAst(child, nonceNames, out);
+        }
+    }
+
+    private static List<FreshnessResult> computeFreshness(ProtocolNode proto) {
+        Set<String> nonceNames = declaredNonces(proto);
+        Set<String> usedNoncesGlobal = new LinkedHashSet<>();
+        List<FreshnessResult> results = new ArrayList<>();
+
+        int i = 1;
+        for (MessageSendNode msg : proto.getMessages()) {
+            String sender = msg.getSender().getName();
+            String receiver = msg.getReceiver().getName();
+            String label = msg.getBody().label(); // now our label() prints full structure
+
+            Set<String> noncesInMsg = new LinkedHashSet<>();
+            collectNoncesInAst(msg.getBody(), nonceNames, noncesInMsg);
+
+            Set<String> newNonces = new LinkedHashSet<>(noncesInMsg);
+            newNonces.removeAll(usedNoncesGlobal);
+
+            Set<String> reusedNonces = new LinkedHashSet<>(noncesInMsg);
+            reusedNonces.retainAll(usedNoncesGlobal);
+
+            FreshnessStatus status;
+            FreshnessReason reason;
+
+            if (noncesInMsg.isEmpty()) {
+                status = FreshnessStatus.REPLAYABLE;
+                reason = FreshnessReason.NO_NONCE;
+            } else if (!newNonces.isEmpty()) {
+                status = FreshnessStatus.FRESH;
+                reason = FreshnessReason.NEW_NONCE;
+            } else {
+                status = FreshnessStatus.REPLAYABLE;
+                reason = FreshnessReason.NONCE_REUSED;
+            }
+
+            usedNoncesGlobal.addAll(noncesInMsg);
+
+            results.add(new FreshnessResult(
+                    i, sender, receiver, label, status, reason,
+                    noncesInMsg, newNonces, reusedNonces
+            ));
+            i++;
+        }
+
+        return results;
+    }
+
+
 
     private static boolean isCryptoExpr(SyntaxNode node) {
         return node instanceof EncryptExprNode
