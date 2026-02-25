@@ -376,70 +376,70 @@ public class GUI extends JFrame implements KeyListener {
 
         runBtn.addActionListener(e -> {
 
-    String input = codeArea.getText();
+            String input = codeArea.getText();
 
-    try {
-        // Build lexer + parser INSIDE try, because ProtocolParser(lexer) can throw now
-        Lexer lexer = new Lexer(input);
-        ProtocolParser parser = new ProtocolParser(lexer);
+            try {
+                // Build lexer + parser INSIDE try, because ProtocolParser(lexer) can throw now
+                Lexer lexer = new Lexer(input);
+                ProtocolParser parser = new ProtocolParser(lexer);
 
-        ProtocolNode tree = parser.parse();
+                ProtocolNode tree = parser.parse();
 
-        System.out.println("=== AST ===");
-        System.out.println(tree.pretty());
+                System.out.println("=== AST ===");
+                System.out.println(tree.pretty());
 
-        lastProtocol = tree;
+                lastProtocol = tree;
 
-        svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
-        analysisStr = KnowledgeAnalyzer.analyzeToString(tree);
+                svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
+                analysisStr = KnowledgeAnalyzer.analyzeToString(tree);
 
-        // ---- Warnings (Layer 1) ----
-        java.util.List<String> warns = new java.util.ArrayList<>();
+                // ---- Warnings (Layer 1) ----
+                java.util.List<String> warns = new java.util.ArrayList<>();
 
-        warns.addAll(VerificationWarningAnalyzer.analyze(tree));
-        warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
+                warns.addAll(VerificationWarningAnalyzer.analyze(tree));
+                warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
 
-        StringBuilder wsb = new StringBuilder();
-        for (String w : warns) wsb.append(w).append("\n");
+                StringBuilder wsb = new StringBuilder();
+                for (String w : warns) wsb.append(w).append("\n");
 
-        errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
+                errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
 
 
-        errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
-        executed = true;
-        
+                errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
+                executed = true;
+                
 
-    } catch (ParseException pe) {
-        System.err.println("Parse error: " + pe.getMessage());
+            } catch (ParseException pe) {
+                System.err.println("Parse error: " + pe.getMessage());
 
-        StringBuilder sb = new StringBuilder();
-        sb.append(pe.getMessage());
+                StringBuilder sb = new StringBuilder();
+                sb.append(pe.getMessage());
 
-        if (pe.token != null) {
-            sb.append("\nAt line ").append(pe.token.getLine())
-              .append(", column ").append(pe.token.getColumn());
+                if (pe.token != null) {
+                    sb.append("\nAt line ").append(pe.token.getLine())
+                    .append(", column ").append(pe.token.getColumn());
 
-            String lex = pe.token.getLexeme();
-            if (lex != null && !lex.isEmpty()) {
-                sb.append("\nFound: '").append(lex).append("'");
+                    String lex = pe.token.getLexeme();
+                    if (lex != null && !lex.isEmpty()) {
+                        sb.append("\nFound: '").append(lex).append("'");
+                    }
+                }
+
+                errorArea.setText(sb.toString());
+                executed = false;
+
+            } catch (Exception ex) {
+                System.err.println("Run failed: " + ex.getMessage());
+                errorArea.setText("Run failed: " + ex.getMessage());
+                executed = false;
             }
-        }
 
-        errorArea.setText(sb.toString());
-        executed = false;
+            if (executed) {
+                svgStr = svgStr.replace("stroke=\"transparent\"", "stroke=\"none\"");
+                switchMode("svg");
+            }
 
-    } catch (Exception ex) {
-        System.err.println("Run failed: " + ex.getMessage());
-        errorArea.setText("Run failed: " + ex.getMessage());
-        executed = false;
-    }
-
-    if (executed) {
-        svgStr = svgStr.replace("stroke=\"transparent\"", "stroke=\"none\"");
-        switchMode("svg");
-    }
-
-});
+        });
 
 
         switchMode("message");
