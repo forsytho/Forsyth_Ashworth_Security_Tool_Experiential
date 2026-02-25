@@ -405,19 +405,16 @@ public class GUI extends JFrame implements KeyListener {
         errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
 
 
-        // Keep "errors" clean, but show warnings too (fast version)
         errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
         executed = true;
         
 
     } catch (ParseException pe) {
-        // Your ParseException already includes line+column+found token in getMessage()
         System.err.println("Parse error: " + pe.getMessage());
 
         StringBuilder sb = new StringBuilder();
         sb.append(pe.getMessage());
 
-        // If we have a token, add explicit location and lexeme too (optional)
         if (pe.token != null) {
             sb.append("\nAt line ").append(pe.token.getLine())
               .append(", column ").append(pe.token.getColumn());
