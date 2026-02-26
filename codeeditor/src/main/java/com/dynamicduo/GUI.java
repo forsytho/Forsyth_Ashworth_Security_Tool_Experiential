@@ -61,6 +61,8 @@ public class GUI extends JFrame implements KeyListener {
     private JScrollPane headingScroll, svgScroll, analysisScroll, errorScroll;
 
     private JPanel messageHeaderPanel;
+    private JPanel svgHeaderPanel;
+
 
     private RSyntaxTextArea codeArea;
     private RTextScrollPane codeScroll;
@@ -71,10 +73,12 @@ public class GUI extends JFrame implements KeyListener {
 
     private JButton messageBtn, svgBtn, javaBtn, analysisBtn;
     private JButton uploadBtn, runBtn, saveBtn, displayBtn;
-    private JButton syntaxBtn;
+    private JButton syntaxBtn, latexBtn;
 
     private String analysisStr, svgStr;
 
+
+    private ProtocolNode currentProtocol;
     private ProtocolNode lastProtocol;
 
     private boolean executed = false, dark = false;
@@ -103,6 +107,7 @@ public class GUI extends JFrame implements KeyListener {
         javaBtn = new JButton("Java Code");
         analysisBtn = new JButton("Analysis");
         syntaxBtn = new JButton("Syntax");
+        latexBtn = new JButton("LaTeX");
 
         // set button size and fonts
         messageBtn.setPreferredSize(new Dimension(105, 35));
@@ -151,6 +156,7 @@ public class GUI extends JFrame implements KeyListener {
         buttonPanel.add(saveBtn);
         buttonPanel.add(uploadBtn);
         buttonPanel.add(displayBtn);
+        
 
         topPanel.add(buttonPanel);
 
@@ -174,9 +180,21 @@ public class GUI extends JFrame implements KeyListener {
         messageHeaderPanel = new JPanel(new BorderLayout());
         messageHeaderPanel.add(headingScroll, BorderLayout.CENTER);
 
+        
         JPanel syntaxBtnWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
         syntaxBtnWrap.add(syntaxBtn);
         messageHeaderPanel.add(syntaxBtnWrap, BorderLayout.EAST);
+
+        // SVG header panel (LaTeX button on the right)
+        svgHeaderPanel = new JPanel(new BorderLayout());
+        svgHeaderPanel.add(headingScroll, BorderLayout.CENTER);
+
+        JPanel latexBtnWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        latexBtn.setPreferredSize(new Dimension(110, 35));
+        latexBtn.setFont(new Font("Verdana", Font.BOLD, 13));
+        latexBtnWrap.add(latexBtn);
+
+        svgHeaderPanel.add(latexBtnWrap, BorderLayout.EAST);
 
 
         // Set up Analysis Area
@@ -226,6 +244,7 @@ public class GUI extends JFrame implements KeyListener {
         analysisBtn.addActionListener(e -> switchMode("analysis"));
         
         syntaxBtn.addActionListener(e -> showSyntaxDialog());
+        latexBtn.addActionListener(e -> exportLatex());
 
 
         // ---------------- SAVE (cross-platform, default = Documents/DynamicDuoExports) ----------------
@@ -376,78 +395,49 @@ public class GUI extends JFrame implements KeyListener {
 
         runBtn.addActionListener(e -> {
 
-            String input = codeArea.getText();
-            Lexer lexer = new Lexer(input);
-            ProtocolParser parser = new ProtocolParser(lexer);
+        String input = codeArea.getText();
+        Lexer lexer = new Lexer(input);
+        ProtocolParser parser = new ProtocolParser(lexer);
 
-            try {
-                ProtocolNode tree = parser.parse();
+        try {
+            ProtocolNode tree = parser.parse();
 
-                System.out.println("=== AST ===");
-                System.out.println(tree.pretty());
+            System.out.println("=== AST ===");
+            System.out.println(tree.pretty());
 
-                lastProtocol = tree;
+            lastProtocol = tree;
 
-                svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
-                analysisStr = KnowledgeAnalyzer.analyzeToString(tree);
+            svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
+            this.currentProtocol = tree;
 
-                executed = true;
-                errorArea.setText("No errors detected.");
+            analysisStr = KnowledgeAnalyzer.analyzeToString(tree);
 
-<<<<<<< HEAD
-            } catch (ParseException pe) {
-                System.err.println("Parse error: " + pe.getMessage());
-                System.err.println("Line: " + pe.getLine());
-                errorArea.setText("Parse error: " + pe.getMessage() + "\nLine: " + pe.getLine());
-                executed = false;
-            } catch (Exception re) {
-                System.err.println("Render failed: " + re.getMessage());
-                errorArea.setText("Render failed: " + re.getMessage());
-                executed = false;
-=======
-        // ---- Warnings (Layer 1) ----
-        java.util.List<String> warns = new java.util.ArrayList<>();
+            // ---- Warnings ----
+            java.util.List<String> warns = new java.util.ArrayList<>();
+            warns.addAll(VerificationWarningAnalyzer.analyze(tree));
+            warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
 
-        warns.addAll(VerificationWarningAnalyzer.analyze(tree));
-        warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
+            StringBuilder wsb = new StringBuilder();
+            for (String w : warns) wsb.append(w).append("\n");
 
-        StringBuilder wsb = new StringBuilder();
-        for (String w : warns) wsb.append(w).append("\n");
+            errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb.toString());
 
-        errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
+            executed = true;
 
-
-        // Keep "errors" clean, but show warnings too (fast version)
-        errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
-        executed = true;
-        
-
-    } catch (ParseException pe) {
-        // Your ParseException already includes line+column+found token in getMessage()
-        System.err.println("Parse error: " + pe.getMessage());
-
-        StringBuilder sb = new StringBuilder();
-        sb.append(pe.getMessage());
-
-        // If we have a token, add explicit location and lexeme too (optional)
-        if (pe.token != null) {
-            sb.append("\nAt line ").append(pe.token.getLine())
-              .append(", column ").append(pe.token.getColumn());
-
-            String lex = pe.token.getLexeme();
-            if (lex != null && !lex.isEmpty()) {
-                sb.append("\nFound: '").append(lex).append("'");
->>>>>>> Warnings-Analyzer
-            }
-
-            if (executed) {
-                svgStr = svgStr.replace("stroke=\"transparent\"", "stroke=\"none\"");
-                switchMode("svg");
-            }
+        } catch (ParseException pe) {
+            // Report parse error (use message provided by ParseException)
+            System.err.println("Parse error: " + pe.getMessage());
+            errorArea.setText("Parse error: " + pe.getMessage());
+            executed = false;
+        } catch (Exception ex) {
+            System.err.println("Render failed: " + ex.getMessage());
+            errorArea.setText("Render failed: " + ex.getMessage());
+            executed = false;
+        }
 
         });
 
-        switchMode("message");
+            switchMode("message");
     }
 
     // Highlight the active mode button
@@ -464,6 +454,8 @@ public class GUI extends JFrame implements KeyListener {
 
     // Switch editor between modes and remember content
     private void switchMode(String newMode) {
+        latexBtn.setVisible("svg".equals(newMode));
+
         if (currentMode.equals("java") || currentMode.equals("message")) {
             modeBuffers.put(currentMode, codeArea.getText());
         } else if (newMode.equals("analysis")) {
@@ -518,7 +510,7 @@ public class GUI extends JFrame implements KeyListener {
                 svgScroll.revalidate();
                 svgScroll.repaint();
 
-                splitPane4 = new JSplitPane(JSplitPane.VERTICAL_SPLIT, headingScroll, svgScroll);
+                splitPane4 = new JSplitPane(JSplitPane.VERTICAL_SPLIT, svgHeaderPanel, svgScroll);
                 splitPane4.setResizeWeight(0.1);
                 setCenterComponent(splitPane4);
 
@@ -732,6 +724,49 @@ public class GUI extends JFrame implements KeyListener {
         };
         ext.requestFocusInWindow();
     }
+
+    private void exportLatex() {
+        if (currentProtocol == null) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "No protocol is loaded yet.",
+                    "Export LaTeX",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            return;
+        }
+
+        String latex = com.dynamicduo.proto.render.LatexRenderer.protocolToLatex(currentProtocol);
+
+        JTextArea area = new JTextArea(latex, 18, 70);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setCaretPosition(0);
+
+        JScrollPane scroll = new JScrollPane(area);
+
+        JButton copyBtn = new JButton("Copy");
+        copyBtn.addActionListener(ev -> {
+            Toolkit.getDefaultToolkit()
+                    .getSystemClipboard()
+                    .setContents(new java.awt.datatransfer.StringSelection(latex), null);
+        });
+
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.add(scroll, BorderLayout.CENTER);
+
+        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        bottom.add(copyBtn);
+        panel.add(bottom, BorderLayout.SOUTH);
+
+        JOptionPane.showMessageDialog(
+                this,
+                panel,
+                "LaTeX Export",
+                JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+
 
     // ---------------- Directory helpers ----------------
 
