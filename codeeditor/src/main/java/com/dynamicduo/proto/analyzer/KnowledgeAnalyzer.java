@@ -57,13 +57,13 @@ import java.util.*;
 public final class KnowledgeAnalyzer {
 
     // Label for the implicit eavesdropping adversary.
-    private static final String ADVERSARY = "Adversary";
-    private record EncTerm(String keyName, SyntaxNode plaintext) {}
+    public static final String ADVERSARY = "Adversary";
+    record EncTerm(String keyName, SyntaxNode plaintext) {}
 
-    private enum FreshnessStatus { FRESH, REPLAYABLE }
-    private enum FreshnessReason { NO_NONCE, NONCE_REUSED, NEW_NONCE }
+    enum FreshnessStatus { FRESH, REPLAYABLE }
+    enum FreshnessReason { NO_NONCE, NONCE_REUSED, NEW_NONCE }
 
-    private record FreshnessResult(
+    record FreshnessResult(
             int index,
             String sender,
             String receiver,
@@ -196,7 +196,7 @@ public final class KnowledgeAnalyzer {
      * summarizing what each principal (and the adversary) knows
      * after one run of the protocol.
      */
-    public static String analyzeToString(ProtocolNode proto) {
+    public static KnowledgeResult analyze(ProtocolNode proto) {
 
         Map<String, Set<String>> knows = new LinkedHashMap<>();
         Map<String, Set<EncTerm>> encryptTerms = new LinkedHashMap<>();
@@ -285,8 +285,17 @@ public final class KnowledgeAnalyzer {
 
             // Observers learn only what is visible on the wire
             for (String p : observers) {
-                knows.get(p).addAll(visibleIds);
-                encryptTerms.get(p).addAll(encs);
+                Set<String> kset = knows.get(p);
+                Set<EncTerm> eset = encryptTerms.get(p);
+
+                if (kset == null || eset == null) {
+                    throw new IllegalArgumentException(
+                        "Unknown role '" + p + "'. Roles are case-sensitive. Declared roles: " + knows.keySet()
+                    );
+                }
+
+                kset.addAll(visibleIds);
+                eset.addAll(encs);
             }
 
             // Sender also knows all identifiers used to construct the message
@@ -339,172 +348,8 @@ public final class KnowledgeAnalyzer {
             }
         }
 
-
-        // 6) Build pretty, categorized output (clean report style)
-        StringBuilder sb = new StringBuilder();
-        sb.append("==================================================\n");
-        sb.append("PROTOCOL KNOWLEDGE ANALYSIS\n");
-        sb.append("==================================================\n\n");
-
-        sb.append("Principals:\n");
-        for (IdentifierNode id : proto.getRoles().getRoles()) {
-            sb.append("  - ").append(id.getName()).append("\n");
-        }
-        sb.append("  - ").append(ADVERSARY).append(" (Passive Eavesdropper)\n\n");
-
-        // Freshness analysis (identify messages that contain fresh nonces vs. potential replays)
         List<FreshnessResult> freshness = computeFreshness(proto);
-
-
-        // We'll collect what the adversary learned for the final verdict here:
-        Set<String> advSecretsForVerdict   = new LinkedHashSet<>();
-        Set<String> advPlaintextForVerdict = new LinkedHashSet<>();
-
-        // Print all non-adversary principals first, then adversary last
-        List<String> ordered = new ArrayList<>(knows.keySet());
-        ordered.remove(ADVERSARY);
-        ordered.add(ADVERSARY);
-
-        for (String principal : ordered) {
-
-            sb.append("--------------------------------------------------\n");
-            if (principal.equals(ADVERSARY)) {
-                sb.append("Adversary (Passive Eavesdropper)\n");
-            } else {
-                sb.append(principal).append("\n");
-            }
-            sb.append("--------------------------------------------------\n");
-
-            // Gather all terms this principal knows/sees
-            Set<String> all = new LinkedHashSet<>();
-            all.addAll(knows.get(principal));
-            // NOTE: we intentionally do NOT dump encryptTerms directly, because it causes redundancy.
-            // The assigned variable name (like "c") is what we want to show users.
-
-            // Categorize
-            Set<String> secrets   = new LinkedHashSet<>();
-            Set<String> plaintext = new LinkedHashSet<>();
-            Set<String> observed  = new LinkedHashSet<>();
-
-            for (String term : all) {
-
-                // Keys / secrets
-                if (isSecretLike(term, secretKeys)) {
-                    secrets.add(term);
-                    continue;
-                }
-
-                // Anything structured is a crypto object (Enc(...), Hash(...), etc.)
-                if (isStructuredTerm(term)) {
-                    observed.add(term);
-                    continue;
-                }
-
-                if (cryptoVars.stream().anyMatch(v -> v.equalsIgnoreCase(term))) {
-                    observed.add(term);
-                    continue;
-                }
-
-
-                // Otherwise it's plaintext-like data (M1, N_A, etc.)
-                if (isPlaintextLike(term, keyKinds, cryptoVars)) {
-                    plaintext.add(term);
-                } else {
-                    observed.add(term);
-                }
-            }
-
-            // Adversary output focuses on what they observe + what they learn
-            if (principal.equals(ADVERSARY)) {
-                sb.append("Observed Messages / Objects:\n");
-                if (observed.isEmpty()) sb.append("  (none)\n");
-                else for (String t : observed) sb.append("  - ").append(t).append("\n");
-
-                sb.append("\nSecrets Learned:\n");
-                if (secrets.isEmpty()) sb.append("  (none)\n");
-                else for (String t : secrets) sb.append("  - ").append(t).append("\n");
-
-                sb.append("\nPlaintext Learned:\n");
-                if (plaintext.isEmpty()) sb.append("  (none)\n");
-                else for (String t : plaintext) sb.append("  - ").append(t).append("\n");
-
-                // ✅ THIS IS THE FIX: feed the verdict from the exact buckets printed above
-                advSecretsForVerdict.addAll(secrets);
-                advPlaintextForVerdict.addAll(plaintext);
-
-                sb.append("\n");
-                continue;
-            }
-
-            // Normal principal output
-            sb.append("Secrets Known:\n");
-            if (secrets.isEmpty()) sb.append("  (none)\n");
-            else for (String t : secrets) sb.append("  - ").append(t).append("\n");
-
-            sb.append("\nPlaintext Data:\n");
-            if (plaintext.isEmpty()) sb.append("  (none)\n");
-            else for (String t : plaintext) sb.append("  - ").append(t).append("\n");
-
-            sb.append("\nObserved Crypto Objects:\n");
-            if (observed.isEmpty()) sb.append("  (none)\n");
-            else for (String t : observed) sb.append("  - ").append(t).append("\n");
-
-            sb.append("\n");
-        }
-
-        // 7) Verdict / catastrophic leak summary
-        Set<String> catastrophic = new LinkedHashSet<>();
-        catastrophic.addAll(advSecretsForVerdict);
-        catastrophic.addAll(advPlaintextForVerdict);
-
-        // Only keep “catastrophic-looking” items
-        catastrophic.removeIf(t ->
-            !(t.startsWith("K_") || t.startsWith("M") || t.startsWith("sk"))
-        );
-
-        sb.append("--------------------------------------------------\n");
-        sb.append("MESSAGE FRESHNESS REPORT (Global Nonce Usage)\n");
-        sb.append("--------------------------------------------------\n");
-
-        if (freshness.isEmpty()) {
-            sb.append("(no messages)\n\n");
-        } else {
-            for (FreshnessResult fr : freshness) {
-                sb.append(fr.index()).append(". ")
-                .append(fr.sender()).append(" -> ").append(fr.receiver()).append(": ")
-                .append(fr.messageLabel()).append("\n");
-
-                if (fr.status() == FreshnessStatus.FRESH) {
-                    sb.append("   Fresh (new nonce: ").append(fr.newNonces()).append(")\n");
-                } else {
-                    if (fr.reason() == FreshnessReason.NO_NONCE) {
-                        sb.append("   Replayable (no nonce)\n");
-                    } else {
-                        sb.append("   Replay (nonce reused: ").append(fr.reusedNonces()).append(")\n");
-                    }
-                }
-                sb.append("\n");
-            }
-        }
-
-
-
-        sb.append("--------------------------------------------------\n");
-        sb.append("SECURITY VERDICT\n");
-        sb.append("--------------------------------------------------\n");
-
-        if (!catastrophic.isEmpty()) {
-            sb.append("Potentially catastrophic leak detected.\n");
-            sb.append("Adversary learned:\n");
-            for (String t : catastrophic) sb.append("  - ").append(t).append("\n");
-        } else {
-            sb.append("No catastrophic leaks detected under this simple model.\n");
-        }
-
-        sb.append("\n==================================================\n");
-        return sb.toString();
-
-
+        return new KnowledgeResult(knows, encryptTerms, keyKinds, secretKeys, cryptoVars, freshness);
     }
 
     private static boolean learnFromDecryptedPlaintext(SyntaxNode node, Set<String> out) {
@@ -713,6 +558,14 @@ public final class KnowledgeAnalyzer {
             return "sk" + pkName.substring(2);
         }
         return null;
+    }
+
+    /*
+     * Convert the analysis result to a string representation.
+     */
+    public static String analyzeToString(ProtocolNode proto) {
+        KnowledgeResult result = analyze(proto);
+        return KnowledgeReportPrinter.toStringReport(proto, result);
     }
 }
 
