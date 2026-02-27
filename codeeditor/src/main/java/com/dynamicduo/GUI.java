@@ -75,6 +75,9 @@ public class GUI extends JFrame implements KeyListener {
     private JButton uploadBtn, runBtn, saveBtn, displayBtn;
     private JButton syntaxBtn, latexBtn;
 
+    private JComboBox<String> presetBox;
+    private JButton loadPresetBtn;
+
     private String analysisStr, svgStr;
 
 
@@ -152,10 +155,29 @@ public class GUI extends JFrame implements KeyListener {
         displayBtn.setFont(new Font("Verdana", Font.BOLD, 14));
 
         // add to button panel
+        presetBox = new JComboBox<>(new String[] {
+            "Presets...",
+            "Needham-Schroeder (PK)",
+            "Diffie-Hellman (Basic)",
+            "ElGamal Signature (Style)",
+            "TLS Handshake (Simplified)"
+        });
+
+        presetBox.setPreferredSize(new Dimension(220, 35));
+        presetBox.setFont(new Font("Verdana", Font.BOLD, 12));
+
+        loadPresetBtn = new JButton("Load");
+        loadPresetBtn.setPreferredSize(new Dimension(80, 35));
+        loadPresetBtn.setFont(new Font("Verdana", Font.BOLD, 14));
+
+        buttonPanel.add(presetBox);
+        buttonPanel.add(loadPresetBtn);
+
         buttonPanel.add(runBtn);
         buttonPanel.add(saveBtn);
         buttonPanel.add(uploadBtn);
         buttonPanel.add(displayBtn);
+
         
 
         topPanel.add(buttonPanel);
@@ -245,6 +267,36 @@ public class GUI extends JFrame implements KeyListener {
         
         syntaxBtn.addActionListener(e -> showSyntaxDialog());
         latexBtn.addActionListener(e -> exportLatex());
+
+        loadPresetBtn.addActionListener(e -> {
+            String selected = (String) presetBox.getSelectedItem();
+            if (selected == null || selected.equals("Presets...")) {
+                JOptionPane.showMessageDialog(this, "Select a preset first.");
+                refocus();
+                return;
+            }
+
+            // Always switch to editor before loading
+            switchMode("message");
+
+            String presetText = ProtocolPresets.getByName(selected);
+            codeArea.setText(presetText);
+
+            // Track buffer so switching tabs doesn't wipe it
+            modeBuffers.put("message", presetText);
+
+            // Clear old outputs so students know they need to click Run
+            executed = false;
+            svgStr = null;
+            analysisStr = null;
+            currentProtocol = null;
+            lastProtocol = null;
+
+            errorArea.setText("Preset loaded: " + selected + "\nEdit as needed, then click Run.");
+
+            refocus();
+        });
+
 
 
         // ---------------- SAVE (cross-platform, default = Documents/DynamicDuoExports) ----------------
@@ -771,6 +823,88 @@ public class GUI extends JFrame implements KeyListener {
                 "LaTeX Export",
                 JOptionPane.INFORMATION_MESSAGE
         );
+    }
+
+
+        // --- Presets ---
+
+    private static final class ProtocolPresets {
+
+        static String needhamSchroederPK() {
+            return """
+            roles:
+            Alice, Bob
+
+            keys:
+            public key pkA: Alice
+            private key skA: Alice
+            public key pkB: Bob
+            private key skB: Bob
+
+            messages:
+            Alice -> Bob: Enc(pkB, Na || Alice)
+            Bob -> Alice: Enc(pkA, Na || Nb)
+            Alice -> Bob: Enc(pkB, Nb)
+            """;
+        }
+
+        static String diffieHellmanBasic() {
+            return """
+            roles:
+            Alice, Bob
+
+            keys:
+
+            messages:
+            Alice -> Bob: gA
+            Bob -> Alice: gB
+            """;
+        }
+
+        static String elgamalSignatureStyle() {
+            return """
+            roles:
+            Alice, Bob
+
+            keys:
+            public key pkA: Alice
+            private key skA: Alice
+
+            messages:
+            Alice -> Bob: m
+            Alice -> Bob: sig = Sign(skA, m)
+            Bob -> Alice: ok = Verify(pkA, m, sig)
+            """;
+        }
+
+        static String tlsHandshakeSimplified() {
+            // 2-party only, “toy TLS-like”
+            return """
+            roles:
+            Client, Server
+
+            keys:
+            public key pkS: Server
+            private key skS: Server
+
+            messages:
+            Client -> Server: Nc
+            Server -> Client: Ns || Sign(skS, Nc || Ns)
+            Client -> Server: pre = Enc(pkS, preMaster)
+            Server -> Client: tagS = Mac(K, Nc || Ns || preMaster)
+            Client -> Server: tagC = Mac(K, Nc || Ns || preMaster)
+            """;
+        }
+
+        static String getByName(String name) {
+            return switch (name) {
+                case "Needham–Schroeder (PK)" -> needhamSchroederPK();
+                case "Diffie–Hellman (Basic)" -> diffieHellmanBasic();
+                case "ElGamal Signature (Style)" -> elgamalSignatureStyle();
+                case "TLS Handshake (Simplified)" -> tlsHandshakeSimplified();
+                default -> "";
+            };
+        }
     }
 
 
