@@ -416,6 +416,8 @@ public class GUI extends JFrame implements KeyListener {
             java.util.List<String> warns = new java.util.ArrayList<>();
             warns.addAll(VerificationWarningAnalyzer.analyze(tree));
             warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
+           
+
 
             StringBuilder wsb = new StringBuilder();
             for (String w : warns) wsb.append(w).append("\n");
