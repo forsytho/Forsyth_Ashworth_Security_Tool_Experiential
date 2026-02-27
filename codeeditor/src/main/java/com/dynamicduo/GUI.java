@@ -435,6 +435,10 @@ public class GUI extends JFrame implements KeyListener {
             executed = false;
         }
 
+        if (executed && svgStr != null) {
+            switchMode("svg");
+        }
+
         });
 
             switchMode("message");
