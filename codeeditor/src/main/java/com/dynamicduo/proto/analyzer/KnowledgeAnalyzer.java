@@ -201,6 +201,11 @@ public final class KnowledgeAnalyzer {
         Map<String, Set<String>> knows = new LinkedHashMap<>();
         Map<String, Set<EncTerm>> encryptTerms = new LinkedHashMap<>();
 
+        Map<String, Map<String, String>> trustedPublicKeyBindings = new LinkedHashMap<>();
+        for (String p : knows.keySet()) {
+            trustedPublicKeyBindings.put(p, new LinkedHashMap<>());
+        }
+
         // 1) Initialize knowledge map for all declared roles in the protocol.
         for (IdentifierNode id : proto.getRoles().getRoles()) {
             knows.put(id.getName(), new LinkedHashSet<>());
@@ -318,12 +323,12 @@ public final class KnowledgeAnalyzer {
                     String k = enc.keyName();
                     SyntaxNode plaintext = enc.plaintext();
 
-                    // If encryption used a PUBLIC key, require matching PRIVATE key to decrypt
-                    String requiredKey = k;
-                    KeyKind kind = keyKinds.get(k);
-                    if (kind == KeyKind.PUBLIC) {
-                        String sk = matchingPrivateKeyName(k); // pkX -> skX
-                        if (sk != null) requiredKey = sk;
+                    String requiredKey = requiredKeyForDecrypt(proto, k, keyKinds);
+
+                    if (requiredKey != null && canDecrypt(terms, requiredKey, keyKinds)) {
+                        if (learnFromDecryptedPlaintext(plaintext, terms)) {
+                            changed = true;
+                        }
                     }
 
                     if (canDecrypt(terms, requiredKey, keyKinds)) {
@@ -349,7 +354,7 @@ public final class KnowledgeAnalyzer {
         }
 
         List<FreshnessResult> freshness = computeFreshness(proto);
-        return new KnowledgeResult(knows, encryptTerms, keyKinds, secretKeys, cryptoVars, freshness);
+        return new KnowledgeResult(knows, encryptTerms, keyKinds, secretKeys, cryptoVars, freshness, trustedPublicKeyBindings);
     }
 
     private static boolean learnFromDecryptedPlaintext(SyntaxNode node, Set<String> out) {
@@ -370,15 +375,6 @@ public final class KnowledgeAnalyzer {
         return out.add(node.label());
     }
 
-
-
-    /**
-     * Heuristic: treat anything with parentheses or "||" as a structured term
-     * (ciphertext, MAC, signature, hash, concat, etc.)
-     */
-    private static boolean isStructuredTerm(String term) {
-        return term.contains("(") || term.contains("||");
-    }
 
     /**
      * Collect identifiers that a sender must know in order to BUILD the message.
@@ -455,15 +451,8 @@ public final class KnowledgeAnalyzer {
      */
     private static boolean canDecrypt(Set<String> terms, String keyName, Map<String, KeyKind> keyKinds) {
         if (!terms.contains(keyName)) return false;
-
-        // If we have keyKinds available, this is the cleanest:
         KeyKind kind = keyKinds.get(keyName);
-        if (kind != null) {
-            return kind == KeyKind.SHARED || kind == KeyKind.PRIVATE;
-        }
-
-        // Fallback heuristic if keyKinds doesn't contain it
-        return keyName.startsWith("K_") || keyName.startsWith("sk");
+        return kind == KeyKind.SHARED || kind == KeyKind.PRIVATE;
     }
 
     private static Set<String> declaredNonces(ProtocolNode proto) {
@@ -534,7 +523,48 @@ public final class KnowledgeAnalyzer {
         return results;
     }
 
+    private static KeyDeclNode findKeyDecl(ProtocolNode proto, String keyName) {
+        for (KeyDeclNode kd : proto.getKeyDecls()) {
+            if (kd.getKeyName().equals(keyName)) return kd;
+        }
+        return null;
+    }
 
+    /**
+     * Decide what key must be known to decrypt Enc(encKey, ...).
+     *
+     * SHARED / PRIVATE: must know encKey itself
+     * PUBLIC: must know the PRIVATE key declared for the same owner list as the PUBLIC key
+     * Unknown / undeclared: cannot decrypt (null)
+     */
+    private static String requiredKeyForDecrypt(
+            ProtocolNode proto,
+            String encKey,
+            Map<String, KeyKind> keyKinds
+    ) {
+        KeyKind kind = keyKinds.get(encKey);
+        if (kind == null) return null;
+
+        if (kind == KeyKind.SHARED || kind == KeyKind.PRIVATE) {
+            return encKey;
+        }
+
+        if (kind == KeyKind.PUBLIC) {
+            KeyDeclNode pub = findKeyDecl(proto, encKey);
+            if (pub == null) return null;
+
+            List<String> owners = pub.getOwners();
+
+            for (KeyDeclNode kd : proto.getKeyDecls()) {
+                if (kd.getKind() == KeyKind.PRIVATE && kd.getOwners().equals(owners)) {
+                    return kd.getKeyName(); // <- THIS is the real decrypt key
+                }
+            }
+            return null; // no matching private key declared
+        }
+
+        return null;
+    }
 
     private static boolean isCryptoExpr(SyntaxNode node) {
         return node instanceof EncryptExprNode

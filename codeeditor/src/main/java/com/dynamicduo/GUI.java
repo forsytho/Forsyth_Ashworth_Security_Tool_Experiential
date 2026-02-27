@@ -426,6 +426,8 @@ public class GUI extends JFrame implements KeyListener {
 
             executed = true;
 
+            switchMode("svg");
+
         } catch (ParseException pe) {
             // Report parse error (use message provided by ParseException)
             System.err.println("Parse error: " + pe.getMessage());

@@ -1,7 +1,10 @@
 package com.dynamicduo.proto.analyzer;
 
 import com.dynamicduo.proto.ast.IdentifierNode;
+import com.dynamicduo.proto.ast.KeyKind;
+import com.dynamicduo.proto.ast.NonceDeclNode;
 import com.dynamicduo.proto.ast.ProtocolNode;
+import java.util.regex.Pattern;
 
 import java.util.*;
 
@@ -116,14 +119,30 @@ public final class KnowledgeReportPrinter {
             sb.append("\n");
         }
 
-        // Verdict / catastrophic leak summary (same as before)
+        // Verdict / catastrophic leak summary (type-driven; no naming conventions)
         Set<String> catastrophic = new LinkedHashSet<>();
-        catastrophic.addAll(advSecretsForVerdict);
-        catastrophic.addAll(advPlaintextForVerdict);
 
-        catastrophic.removeIf(t ->
-                !(t.startsWith("K_") || t.startsWith("M") || t.startsWith("sk"))
-        );
+        // Keys learned by adversary are always catastrophic
+        catastrophic.addAll(advSecretsForVerdict);
+
+        // Plaintext learned by adversary is catastrophic if it is a bare identifier
+        // that is NOT a declared key and NOT a crypto-produced var.
+        // (Optionally exclude declared nonces.)
+        Set<String> nonceNames = new LinkedHashSet<>();
+        for (NonceDeclNode nd : proto.getNonceDecls()) {
+            nonceNames.add(nd.getName());
+        }
+
+        for (String t : advPlaintextForVerdict) {
+            boolean isBareId = isBareIdentifier(t); // or inline the same logic
+            boolean isKey = result.keyKinds().containsKey(t);
+            boolean isCryptoVar = result.cryptoVars().contains(t);
+            boolean isNonce = nonceNames.contains(t);
+
+            if (isBareId && !isKey && !isCryptoVar /* && !isNonce */) {
+                catastrophic.add(t);
+            }
+        }
 
         sb.append("--------------------------------------------------\n");
         sb.append("MESSAGE FRESHNESS REPORT (Global Nonce Usage)\n");
@@ -151,7 +170,19 @@ public final class KnowledgeReportPrinter {
                 sb.append("\n");
             }
         }
-
+        
+        sb.append("Trusted Public Key Bindings:\n");
+        var bindings = result.trustedPublicKeyBindings();
+        for (var entry : bindings.entrySet()) {
+            String principal = entry.getKey();
+            Map<String,String> b = entry.getValue();
+            if (b.isEmpty()) continue;
+            sb.append("  ").append(principal).append(":\n");
+            for (var kv : b.entrySet()) {
+                sb.append("    ").append(kv.getKey()).append(" -> ").append(kv.getValue()).append("\n");
+            }
+        }
+        sb.append("\n");
 
         sb.append("--------------------------------------------------\n");
         sb.append("SECURITY VERDICT\n");
@@ -177,8 +208,11 @@ public final class KnowledgeReportPrinter {
 
     private static boolean isBareIdentifier(String term) {
         if (term == null || term.isEmpty()) return false;
-        if ("Concat".equals(term)) return false;
-        for (int i = 0; i < term.length(); i++) {
+
+        char first = term.charAt(0);
+        if (!Character.isLetter(first)) return false; // must start with a letter
+
+        for (int i = 1; i < term.length(); i++) {
             char c = term.charAt(i);
             if (!(Character.isLetterOrDigit(c) || c == '_')) return false;
         }
@@ -186,10 +220,12 @@ public final class KnowledgeReportPrinter {
     }
 
     private static boolean isPlaintextLike(
-            String term,
-            Map<String, com.dynamicduo.proto.ast.KeyKind> keyKinds,
-            Set<String> cryptoVars
+        String term,
+        Map<String, KeyKind> keyKinds,
+        Set<String> cryptoVars
     ) {
-        return isBareIdentifier(term) && !keyKinds.containsKey(term) && !cryptoVars.contains(term);
+        return isBareIdentifier(term)
+                && !keyKinds.containsKey(term)
+                && !cryptoVars.contains(term);
     }
 }
