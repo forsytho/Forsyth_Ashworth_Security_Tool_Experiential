@@ -31,6 +31,7 @@ public class ProtocolNode extends SyntaxNode {
     private final List<MessageSendNode> messages = new ArrayList<>();
     private final List<KeyDeclNode> keyDecls = new ArrayList<>();
     private final List<NonceDeclNode> nonceDecls = new ArrayList<>();
+    private final List<CertDeclNode> certDecls = new ArrayList<>();
 
     public ProtocolNode(RoleDeclNode roles) {
         this.roles = roles;
@@ -75,5 +76,13 @@ public class ProtocolNode extends SyntaxNode {
         c.add(roles);
         c.addAll(messages);
         return c;
+    }
+
+    public List<CertDeclNode> getCertDecls() {
+        return certDecls;
+    }
+
+    public void addCertDecl(CertDeclNode decl) {
+        certDecls.add(decl);
     }
 }

@@ -128,6 +128,8 @@ public class Lexer {
                 return new Token(TokenType.VRFY, raw, line);
             case "hash":
                 return new Token(TokenType.HASH, raw, line);
+            case "cert":
+                return new Token(TokenType.CERT, raw, line);
             case "nonce":
                 return new Token(TokenType.NONCE, raw, line);
             default:

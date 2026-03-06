@@ -51,7 +51,10 @@ import org.apache.pdfbox.text.PDFTextStripper;
 
 import com.dynamicduo.proto.analyzer.KeyMisuseWarningAnalyzer;
 import com.dynamicduo.proto.analyzer.KnowledgeAnalyzer;
+import com.dynamicduo.proto.analyzer.KnowledgeReportPrinter;
 import com.dynamicduo.proto.codegen.JavaCodeGenerator;
+import com.dynamicduo.proto.analyzer.KnowledgeResult;
+import com.dynamicduo.proto.analyzer.SignatureForgeryAnalysis;
 
 
 
@@ -410,12 +413,14 @@ public class GUI extends JFrame implements KeyListener {
             svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
             this.currentProtocol = tree;
 
-            analysisStr = KnowledgeAnalyzer.analyzeToString(tree);
+            KnowledgeResult result = KnowledgeAnalyzer.analyze(tree);
+            analysisStr = KnowledgeReportPrinter.toStringReport(tree, result);
 
             // ---- Warnings ----
             java.util.List<String> warns = new java.util.ArrayList<>();
             warns.addAll(VerificationWarningAnalyzer.analyze(tree));
             warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
+            warns.addAll(SignatureForgeryAnalysis.analyze(tree, result));
            
 
 

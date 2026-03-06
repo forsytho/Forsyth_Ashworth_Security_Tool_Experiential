@@ -34,6 +34,7 @@ public enum TokenType {
     VRFY,  // verify signature
     HASH,  // cryptographic hash
     NONCE, // nonce generation
+    CERT, // certificate declaration
 
     SHARED, // shared key declaration
     PUBLIC,

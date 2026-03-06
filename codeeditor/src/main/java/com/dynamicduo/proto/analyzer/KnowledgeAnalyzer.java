@@ -80,6 +80,7 @@ public final class KnowledgeAnalyzer {
         // Utility class
     }
 
+
     /**
      * Public entry point.
      *
@@ -218,6 +219,7 @@ public final class KnowledgeAnalyzer {
         for (KeyDeclNode kd : proto.getKeyDecls()) {
             keyKinds.put(kd.getKeyName(), kd.getKind());
         }
+        
 
         // For identifying secrets later
        Set<String> secretKeys = new HashSet<>();
@@ -225,6 +227,12 @@ public final class KnowledgeAnalyzer {
             if (entry.getValue() == KeyKind.SHARED || entry.getValue() == KeyKind.PRIVATE) {
                 secretKeys.add(entry.getKey());
             }
+        }
+
+        // Build a map of certified public keys and their owners
+        Map<String, String> certifiedKeyOwners = new LinkedHashMap<>();
+        for (CertDeclNode cd : proto.getCertDecls()) {
+            certifiedKeyOwners.put(cd.getPublicKeyName(), cd.getOwner());
         }
 
         // 2) Seed knowledge from key declarations
@@ -354,7 +362,7 @@ public final class KnowledgeAnalyzer {
         }
 
         List<FreshnessResult> freshness = computeFreshness(proto);
-        return new KnowledgeResult(knows, encryptTerms, keyKinds, secretKeys, cryptoVars, freshness, trustedPublicKeyBindings);
+        return new KnowledgeResult(knows, encryptTerms, keyKinds, secretKeys, cryptoVars, freshness, trustedPublicKeyBindings, certifiedKeyOwners);
     }
 
     private static boolean learnFromDecryptedPlaintext(SyntaxNode node, Set<String> out) {

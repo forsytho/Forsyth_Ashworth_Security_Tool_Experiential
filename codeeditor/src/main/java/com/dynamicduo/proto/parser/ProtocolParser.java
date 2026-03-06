@@ -59,6 +59,7 @@ public class ProtocolParser {
     private int current = 0;
 
     public ProtocolParser(Lexer lexer) {
+
         // I pull all tokens up front so it is easy to peek / lookahead.
         Token t;
         do {
@@ -69,6 +70,7 @@ public class ProtocolParser {
 
     /** Entry point: parse a ProtocolNode or throw ParseException on error. */
     public ProtocolNode parse() throws ParseException {
+        
         // 1) roles: Alice, Bob, Server
         RoleDeclNode roles = rolesDecl();
         ProtocolNode proto = new ProtocolNode(roles);
@@ -77,7 +79,7 @@ public class ProtocolParser {
         //    shared key K_AB: Alice, Bob
         //    public key pkA: Alice
         //    private key skA: Alice
-        while (check(TokenType.SHARED) || check(TokenType.PUBLIC) || check(TokenType.PRIVATE) || check(TokenType.NONCE)) {
+        while (check(TokenType.SHARED) || check(TokenType.PUBLIC) || check(TokenType.PRIVATE) || check(TokenType.NONCE) || check(TokenType.CERT)) {
             if (match(TokenType.SHARED)) {
                 proto.addKeyDecl(sharedKeyDecl());
             } else if (match(TokenType.PUBLIC)) {
@@ -86,6 +88,8 @@ public class ProtocolParser {
                 proto.addKeyDecl(privateKeyDecl());
             } else if (match(TokenType.NONCE)) {
                 proto.addNonceDecl(nonceDecl());
+            } else if (match(TokenType.CERT)) {
+                proto.addCertDecl(certDecl());
             }
         }
 
@@ -297,6 +301,14 @@ public class ProtocolParser {
         consume(TokenType.COLON, "Expected ':' after nonce name.");
         Token ownerIdent = consume(TokenType.IDENTIFIER, "Expected owner role after ':'.");
         return new NonceDeclNode(nonceIdent.getLexeme(), ownerIdent.getLexeme());
+    }
+
+    // certDecl → "cert" IDENTIFIER ":" IDENTIFIER ;
+    private CertDeclNode certDecl() throws ParseException {
+        Token pkIdent = consume(TokenType.IDENTIFIER, "Expected public key name after 'cert'.");
+        consume(TokenType.COLON, "Expected ':' after cert public key name.");
+        Token ownerIdent = consume(TokenType.IDENTIFIER, "Expected owner role after ':'.");
+        return new CertDeclNode(pkIdent.getLexeme(), ownerIdent.getLexeme());
     }
 
     

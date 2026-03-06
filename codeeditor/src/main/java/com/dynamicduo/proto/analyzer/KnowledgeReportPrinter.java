@@ -35,6 +35,18 @@ public final class KnowledgeReportPrinter {
         ordered.remove(ADVERSARY);
         ordered.add(ADVERSARY);
 
+        sb.append("Certified Public Key Bindings:\n");
+        if (result.certifiedKeyOwners().isEmpty()) {
+            sb.append("  (none)\n\n");
+        } else {
+            for (Map.Entry<String, String> entry : result.certifiedKeyOwners().entrySet()) {
+                sb.append("  - ").append(entry.getKey())
+                .append(" belongs to ").append(entry.getValue())
+                .append("\n");
+            }
+            sb.append("\n");
+        }
+
         for (String principal : ordered) {
 
             sb.append("--------------------------------------------------\n");
@@ -44,6 +56,8 @@ public final class KnowledgeReportPrinter {
                 sb.append(principal).append("\n");
             }
             sb.append("--------------------------------------------------\n");
+
+           
 
             // Gather all terms this principal knows/sees
             Set<String> all = new LinkedHashSet<>();
