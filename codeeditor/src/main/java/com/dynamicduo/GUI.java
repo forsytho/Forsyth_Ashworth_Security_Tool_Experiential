@@ -49,6 +49,7 @@ import com.kitfox.svg.app.beans.SVGIcon;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 
+import com.dynamicduo.proto.analyzer.AuthenticationWarningAnalyzer;
 import com.dynamicduo.proto.analyzer.KeyMisuseWarningAnalyzer;
 import com.dynamicduo.proto.analyzer.KnowledgeAnalyzer;
 import com.dynamicduo.proto.analyzer.KnowledgeReportPrinter;
@@ -418,6 +419,7 @@ public class GUI extends JFrame implements KeyListener {
 
             // ---- Warnings ----
             java.util.List<String> warns = new java.util.ArrayList<>();
+            warns.addAll(AuthenticationWarningAnalyzer.analyze(tree));
             warns.addAll(VerificationWarningAnalyzer.analyze(tree));
             warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
             warns.addAll(SignatureForgeryAnalysis.analyze(tree, result));
