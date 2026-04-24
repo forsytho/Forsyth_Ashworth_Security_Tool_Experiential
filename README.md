@@ -8,12 +8,12 @@ Requirements Document: https://docs.google.com/document/d/1Ccn0vOZgHxaaxaO-AUtDK
 
 Test Cases: https://docs.google.com/document/d/1b5LWjYxebX61XjGqoAU_-5XhUyGm9JHhxiM39wlM_Q4/edit?usp=sharing
 
-Functional Spec: https://docs.google.com/document/d/1wTz9SNn2sz0VLZ-OaT3r70yJg0hPOJw_-c5wvswc_rY/edit?usp=sharing
+Functional Spec 2.0: https://docs.google.com/document/d/1SqYbaSr1OAdqedpqktPgqtfeZlTueLif5WkzkVjCkc8/edit?usp=sharing
 
 Poster: https://www.canva.com/design/DAG4iLX5zYg/Ojbo6s9i2h-WKAFsDzScuA/edit?utm_content=DAG4iLX5zYg&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
 
 Presentation: https://docs.google.com/presentation/d/1mIWKVul5iP_DjhpJzqapuQew6uhvpMKmkWwfHmrZZ3U/edit?usp=sharing 
 
-User Manual: https://docs.google.com/document/d/1fE992sTsCosboSsy-herg9Dju63hGIcYJsFWX-u4Oxc/edit?usp=sharing 
+User Manual 2.0: https://docs.google.com/document/d/11ALfHsZ6Iffzi4bqU4xfvPnjXQWwe6KuJXN1vz3a4KA/edit?usp=sharing
 
 Technical Document: https://docs.google.com/document/d/1WOmkFyMtY43E34vyGzMuOjlFn6qPWJqXhZre3zPUr6M/edit?usp=sharing
