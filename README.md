@@ -17,3 +17,5 @@ Presentation: https://docs.google.com/presentation/d/1mIWKVul5iP_DjhpJzqapuQew6u
 User Manual 2.0: https://docs.google.com/document/d/11ALfHsZ6Iffzi4bqU4xfvPnjXQWwe6KuJXN1vz3a4KA/edit?usp=sharing
 
 Technical Document: https://docs.google.com/document/d/1WOmkFyMtY43E34vyGzMuOjlFn6qPWJqXhZre3zPUr6M/edit?usp=sharing
+
+Software Update Notes: 
