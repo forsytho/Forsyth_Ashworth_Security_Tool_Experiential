@@ -18,4 +18,4 @@ User Manual 2.0: https://docs.google.com/document/d/11ALfHsZ6Iffzi4bqU4xfvPnjXQW
 
 Technical Document: https://docs.google.com/document/d/1WOmkFyMtY43E34vyGzMuOjlFn6qPWJqXhZre3zPUr6M/edit?usp=sharing
 
-Software Update Notes: 
+Software Update Notes: https://docs.google.com/document/d/1hluM2FLWvTgCkku3YbWKUhBAZSE3x788wS4mLK4F3SY/edit?usp=sharing
