@@ -1,0 +1,9 @@
+roles:
+  Alice, Bob
+
+  public key pkA: Alice
+  private key skA: Alice
+
+  Alice -> Bob: m
+  Alice -> Bob: sig = Sign(skA, m)
+  Bob -> Alice: ok = Verify(pkA, m, sig)

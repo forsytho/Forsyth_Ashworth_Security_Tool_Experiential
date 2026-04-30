@@ -1,0 +1,11 @@
+roles:
+  Alice, Bob
+
+  public key pkA: Alice
+  private key skA: Alice
+  public key pkB: Bob
+  private key skB: Bob
+
+  Alice -> Bob: Enc(pkB, Na || Alice)
+  Bob -> Alice: Enc(pkA, Na || Nb)
+  Alice -> Bob: Enc(pkB, Nb)
