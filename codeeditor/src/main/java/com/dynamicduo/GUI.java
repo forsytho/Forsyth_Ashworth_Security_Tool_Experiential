@@ -2,17 +2,17 @@
 *
 * Copyright (C) 2025 Owen Forsyth and Daniel Mead
 *
-* This program is free software: you can redistribute it and/or modify 
-* it under the terms of the GNU General Public License as published by 
-* the Free Software Foundation, either version 3 of the License, or 
+* This program is free software: you can redistribute it and/or modify
+* it under the terms of the GNU General Public License as published by
+* the Free Software Foundation, either version 3 of the License, or
 * (at your option) any later version.
 *
-* This program is distributed in the hope that it will be useful, 
-* but WITHOUT ANY WARRANTY; without even the implied warranty of 
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
 * General Public License for more details.
 *
-* You should have received a copy of the GNU General Public License 
+* You should have received a copy of the GNU General Public License
 * along with this program. If not, see <https://www.gnu.org/licenses/>.
 *
 */
@@ -37,8 +37,9 @@ import java.io.*;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.prefs.Preferences;
+import java.util.LinkedHashMap;
 
 import org.fife.ui.rsyntaxtextarea.*;
 import org.fife.ui.rtextarea.*;
@@ -49,15 +50,13 @@ import com.kitfox.svg.app.beans.SVGIcon;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 
-import com.dynamicduo.proto.analyzer.AuthenticationWarningAnalyzer;
 import com.dynamicduo.proto.analyzer.KeyMisuseWarningAnalyzer;
 import com.dynamicduo.proto.analyzer.KnowledgeAnalyzer;
 import com.dynamicduo.proto.analyzer.KnowledgeReportPrinter;
 import com.dynamicduo.proto.codegen.JavaCodeGenerator;
 import com.dynamicduo.proto.analyzer.KnowledgeResult;
 import com.dynamicduo.proto.analyzer.SignatureForgeryAnalysis;
-
-
+import com.dynamicduo.proto.presets.PresetManager;
 
 public class GUI extends JFrame implements KeyListener {
 
@@ -66,7 +65,6 @@ public class GUI extends JFrame implements KeyListener {
 
     private JPanel messageHeaderPanel;
     private JPanel svgHeaderPanel;
-
 
     private RSyntaxTextArea codeArea;
     private RTextScrollPane codeScroll;
@@ -79,8 +77,12 @@ public class GUI extends JFrame implements KeyListener {
     private JButton uploadBtn, runBtn, saveBtn, displayBtn;
     private JButton syntaxBtn, latexBtn;
 
-    private String analysisStr, svgStr;
+    // NEW: preset controls
+    private JComboBox<String> presetBox;
+    private JButton loadPresetBtn;
+    private LinkedHashMap<String, Path> presetFiles = new LinkedHashMap<>();
 
+    private String analysisStr, svgStr;
 
     private ProtocolNode currentProtocol;
     private ProtocolNode lastProtocol;
@@ -88,7 +90,6 @@ public class GUI extends JFrame implements KeyListener {
     private boolean executed = false, dark = false;
     private JLabel label = new JLabel();
     private double zoomFactor = 1.0;
-
 
     public GUI() {
         setTitle("Secure Protocol Editor");
@@ -137,8 +138,6 @@ public class GUI extends JFrame implements KeyListener {
         JPanel buttonPanel = new JPanel();
         buttonPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
 
-        
-
         // Assigning buttons
         runBtn = new JButton("Run");
         saveBtn = new JButton("Save As");
@@ -160,7 +159,6 @@ public class GUI extends JFrame implements KeyListener {
         buttonPanel.add(saveBtn);
         buttonPanel.add(uploadBtn);
         buttonPanel.add(displayBtn);
-        
 
         topPanel.add(buttonPanel);
 
@@ -180,14 +178,24 @@ public class GUI extends JFrame implements KeyListener {
         syntaxBtn.setPreferredSize(new Dimension(110, 35));
         syntaxBtn.setFont(new Font("Verdana", Font.BOLD, 13));
 
+        // NEW: Preset controls
+        presetBox = new JComboBox<>();
+        presetBox.setPreferredSize(new Dimension(220, 32));
+        presetBox.setFont(new Font("Verdana", Font.PLAIN, 12));
+
+        loadPresetBtn = new JButton("Load Preset");
+        loadPresetBtn.setPreferredSize(new Dimension(120, 35));
+        loadPresetBtn.setFont(new Font("Verdana", Font.BOLD, 12));
+
         // Panel that sits INSIDE the "Message Mode" header box
         messageHeaderPanel = new JPanel(new BorderLayout());
         messageHeaderPanel.add(headingScroll, BorderLayout.CENTER);
 
-        
-        JPanel syntaxBtnWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
-        syntaxBtnWrap.add(syntaxBtn);
-        messageHeaderPanel.add(syntaxBtnWrap, BorderLayout.EAST);
+        JPanel messageControlsWrap = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        messageControlsWrap.add(presetBox);
+        messageControlsWrap.add(loadPresetBtn);
+        messageControlsWrap.add(syntaxBtn);
+        messageHeaderPanel.add(messageControlsWrap, BorderLayout.EAST);
 
         // SVG header panel (LaTeX button on the right)
         svgHeaderPanel = new JPanel(new BorderLayout());
@@ -199,7 +207,6 @@ public class GUI extends JFrame implements KeyListener {
         latexBtnWrap.add(latexBtn);
 
         svgHeaderPanel.add(latexBtnWrap, BorderLayout.EAST);
-
 
         // Set up Analysis Area
         analysisArea = new JTextArea();
@@ -246,10 +253,26 @@ public class GUI extends JFrame implements KeyListener {
         svgBtn.addActionListener(e -> switchMode("svg"));
         javaBtn.addActionListener(e -> switchMode("java"));
         analysisBtn.addActionListener(e -> switchMode("analysis"));
-        
+
         syntaxBtn.addActionListener(e -> showSyntaxDialog());
         latexBtn.addActionListener(e -> exportLatex());
 
+        // NEW: preset button
+        loadPresetBtn.addActionListener(e -> loadSelectedPreset());
+
+        // Initialize presets
+        try {
+            Path exportDirPath = getExportDirectory().toPath();
+            PresetManager.initialize(exportDirPath);
+            reloadPresets();
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to initialize presets: " + ex.getMessage(),
+                    "Preset Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+        }
 
         // ---------------- SAVE (cross-platform, default = Documents/DynamicDuoExports) ----------------
         saveBtn.addActionListener(e -> {
@@ -269,7 +292,7 @@ public class GUI extends JFrame implements KeyListener {
                 default -> "output" + ext;
             };
 
-            File exportDir = getExportDirectory(); // <-- ALWAYS DynamicDuoExports
+            File exportDir = getExportDirectory();
 
             JFileChooser chooser = new JFileChooser(exportDir);
             chooser.setDialogTitle("Save " + currentMode);
@@ -283,7 +306,6 @@ public class GUI extends JFrame implements KeyListener {
 
             File file = chooser.getSelectedFile();
 
-            // ensure extension
             if (!file.getName().toLowerCase().endsWith(ext)) {
                 file = new File(file.getAbsolutePath() + ext);
             }
@@ -300,7 +322,7 @@ public class GUI extends JFrame implements KeyListener {
                 } else if (currentMode.equals("java") || currentMode.equals("message")) {
                     Files.writeString(file.toPath(), codeArea.getText(), StandardCharsets.UTF_8);
 
-                } else { // analysis
+                } else {
                     Files.writeString(file.toPath(), analysisArea.getText(), StandardCharsets.UTF_8);
                 }
 
@@ -312,8 +334,7 @@ public class GUI extends JFrame implements KeyListener {
             refocus();
         });
 
-
-        // ---------------- UPLOAD (cross-platform, default = Documents/DynamicDuoExports) ----------------
+        // ---------------- UPLOAD  ----------------
         uploadBtn.addActionListener(e -> {
             File exportDir = getExportDirectory();
 
@@ -353,7 +374,6 @@ public class GUI extends JFrame implements KeyListener {
 
             refocus();
         });
-
 
         // Dark mode toggle
         displayBtn.addActionListener(e -> {
@@ -398,62 +418,108 @@ public class GUI extends JFrame implements KeyListener {
         });
 
         runBtn.addActionListener(e -> {
+            String input = codeArea.getText();
 
-        String input = codeArea.getText();
-        Lexer lexer = new Lexer(input);
-        ProtocolParser parser = new ProtocolParser(lexer);
+            try {
+                Lexer lexer = new Lexer(input);
+                ProtocolParser parser = new ProtocolParser(lexer);
+                ProtocolNode tree = parser.parse();
 
-        try {
-            ProtocolNode tree = parser.parse();
+                System.out.println("=== AST ===");
+                System.out.println(tree.pretty());
 
-            System.out.println("=== AST ===");
-            System.out.println(tree.pretty());
+                lastProtocol = tree;
+                currentProtocol = tree;
 
-            lastProtocol = tree;
+                svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
 
-            svgStr = SequenceDiagramFromAst.renderTwoParty(tree);
-            this.currentProtocol = tree;
+                KnowledgeResult result = KnowledgeAnalyzer.analyze(tree);
+                analysisStr = KnowledgeReportPrinter.toStringReport(tree, result);
 
-            KnowledgeResult result = KnowledgeAnalyzer.analyze(tree);
-            analysisStr = KnowledgeReportPrinter.toStringReport(tree, result);
+                java.util.List<String> warns = new java.util.ArrayList<>();
+                warns.addAll(VerificationWarningAnalyzer.analyze(tree));
+                warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
+                warns.addAll(SignatureForgeryAnalysis.analyze(tree, result));
 
-            // ---- Warnings ----
-            java.util.List<String> warns = new java.util.ArrayList<>();
+                StringBuilder wsb = new StringBuilder();
+                for (String w : warns) {
+                    wsb.append(w).append("\n");
+                }
 
-            warns.addAll(AuthenticationWarningAnalyzer.analyze(tree));
-            warns.addAll(VerificationWarningAnalyzer.analyze(tree));
-            warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
-            warns.addAll(SignatureForgeryAnalysis.analyze(tree, result));
+                errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb);
+                executed = true;
 
+            } catch (ParseException pe) {
+                System.err.println("Parse error: " + pe.getMessage());
+                errorArea.setText("Parse error: " + pe.getMessage());
+                executed = false;
+            } catch (Exception ex) {
+                System.err.println("Render failed: " + ex.getMessage());
+                errorArea.setText("Render failed: " + ex.getMessage());
+                executed = false;
+            }
 
-            StringBuilder wsb = new StringBuilder();
-            for (String w : warns) wsb.append(w).append("\n");
-
-            errorArea.setText("No errors detected.\n\nWarnings:\n" + wsb.toString());
-
-            executed = true;
-
-            switchMode("svg");
-
-        } catch (ParseException pe) {
-            // Report parse error (use message provided by ParseException)
-            System.err.println("Parse error: " + pe.getMessage());
-            errorArea.setText("Parse error: " + pe.getMessage());
-            executed = false;
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            System.err.println("Render failed: " + ex.getMessage());
-            errorArea.setText("Render failed: " + ex.getMessage());
-            executed = false;
-        }
-
-        if (executed && svgStr != null) {
-            switchMode("svg");
-        }
-
+            if (executed && svgStr != null) {
+                switchMode("svg");
+            }
         });
 
+        switchMode("message");
+    }
+
+    // NEW: reload presets from config
+    private void reloadPresets() {
+        presetBox.removeAllItems();
+        presetBox.addItem("Select preset...");
+
+        try {
+            presetFiles = PresetManager.loadPresetMap(getExportDirectory().toPath());
+            for (String name : presetFiles.keySet()) {
+                presetBox.addItem(name);
+            }
+        } catch (IOException ex) {
+            errorArea.setText("Failed to load presets: " + ex.getMessage());
+        }
+    }
+
+    // NEW: load selected preset into editor
+    private void loadSelectedPreset() {
+        String selected = (String) presetBox.getSelectedItem();
+        if (selected == null || selected.equals("Select preset...")) {
+            JOptionPane.showMessageDialog(this, "Please select a preset first.");
+            return;
+        }
+
+        Path presetPath = presetFiles.get(selected);
+        if (presetPath == null) {
+            JOptionPane.showMessageDialog(this, "Preset file not found for: " + selected);
+            return;
+        }
+
+        try {
+            String presetText = PresetManager.loadPresetText(presetPath);
+
             switchMode("message");
+            codeArea.setText(presetText);
+            modeBuffers.put("message", presetText);
+
+            executed = false;
+            svgStr = null;
+            analysisStr = null;
+            currentProtocol = null;
+            lastProtocol = null;
+
+            errorArea.setText("Preset loaded: " + selected + "\nEdit as needed, then click Run.");
+            refocus();
+
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to load preset: " + ex.getMessage(),
+                    "Preset Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+        }
     }
 
     // Highlight the active mode button
@@ -494,11 +560,11 @@ public class GUI extends JFrame implements KeyListener {
                 headingArea.setText("SVG Mode\n(This is the SVG for the Message Passing)");
                 highlightActiveMode(svgBtn);
 
-
                 uploadBtn.setEnabled(false);
                 runBtn.setEnabled(false);
                 syntaxBtn.setEnabled(false);
-
+                presetBox.setEnabled(false);
+                loadPresetBtn.setEnabled(false);
 
                 if (executed && svgStr != null) {
                     SVGUniverse universe = new SVGUniverse();
@@ -507,7 +573,6 @@ public class GUI extends JFrame implements KeyListener {
                     SVGIcon icon = new SVGIcon();
                     icon.setSvgUniverse(universe);
                     icon.setSvgURI(svgUri);
-
                     icon.setAntiAlias(true);
                     icon.setAutosize(SVGIcon.AUTOSIZE_BESTFIT);
 
@@ -563,7 +628,8 @@ public class GUI extends JFrame implements KeyListener {
                 uploadBtn.setEnabled(false);
                 runBtn.setEnabled(false);
                 syntaxBtn.setEnabled(false);
-
+                presetBox.setEnabled(false);
+                loadPresetBtn.setEnabled(false);
 
                 setUpCodeScroll();
                 setCenterComponent(splitPane);
@@ -584,7 +650,8 @@ public class GUI extends JFrame implements KeyListener {
                 uploadBtn.setEnabled(false);
                 runBtn.setEnabled(false);
                 syntaxBtn.setEnabled(false);
-
+                presetBox.setEnabled(false);
+                loadPresetBtn.setEnabled(false);
 
                 splitPane2 = new JSplitPane(JSplitPane.VERTICAL_SPLIT, headingScroll, analysisScroll);
                 splitPane2.setResizeWeight(0.10);
@@ -596,30 +663,26 @@ public class GUI extends JFrame implements KeyListener {
                 splitPane2.requestFocusInWindow();
             }
             case "message" -> {
-                splitPane3 = new JSplitPane(JSplitPane.VERTICAL_SPLIT, splitPane, errorScroll);
-
                 headingArea.setText(" Welcome to the Protocol Editor. Please type your protocol description below, then click 'Run'. \n You may refer to the syntax guide for help -->");
 
                 highlightActiveMode(messageBtn);
-                
 
                 syntaxBtn.setEnabled(true);
+                presetBox.setEnabled(true);
+                loadPresetBtn.setEnabled(true);
                 codeArea.setEditable(true);
                 uploadBtn.setEnabled(true);
                 runBtn.setEnabled(true);
 
                 setUpCodeScroll();
 
-                // Header (with Syntax button on the right) + Editor
                 JSplitPane top = new JSplitPane(JSplitPane.VERTICAL_SPLIT, messageHeaderPanel, codeScroll);
-                top.setResizeWeight(0.20);     // header smaller, editor bigger
+                top.setResizeWeight(0.20);
                 top.setDividerSize(6);
 
                 splitPane3 = new JSplitPane(JSplitPane.VERTICAL_SPLIT, top, errorScroll);
                 splitPane3.setResizeWeight(0.80);
                 setCenterComponent(splitPane3);
-
-
             }
         }
     }
@@ -643,8 +706,6 @@ public class GUI extends JFrame implements KeyListener {
         splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, header, codeScroll);
         splitPane.setResizeWeight(0.25);
     }
-
-
 
     @Override
     public void keyPressed(KeyEvent e) {
@@ -783,13 +844,12 @@ public class GUI extends JFrame implements KeyListener {
         );
     }
 
-
     // ---------------- Directory helpers ----------------
 
     private File getDocumentsDirectory() {
-    File docs = FileSystemView.getFileSystemView().getDefaultDirectory(); // usually “Documents”
-    if (docs != null && docs.exists()) return docs;
-    return new File(System.getProperty("user.home")); // fallback
+        File docs = FileSystemView.getFileSystemView().getDefaultDirectory();
+        if (docs != null && docs.exists()) return docs;
+        return new File(System.getProperty("user.home"));
     }
 
     private File getExportDirectory() {
@@ -812,7 +872,6 @@ public class GUI extends JFrame implements KeyListener {
         JScrollPane scroll = new JScrollPane(area);
         scroll.setPreferredSize(new Dimension(820, 520));
 
-        // ---- Build a real modal dialog so we can control colors reliably ----
         final JDialog dialog = new JDialog(this, "Syntax Reference (SYNTAX.md)", true);
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
@@ -826,7 +885,6 @@ public class GUI extends JFrame implements KeyListener {
         root.add(scroll, BorderLayout.CENTER);
         root.add(bottom, BorderLayout.SOUTH);
 
-        // ---- Apply light/dark theme ----
         applySyntaxDialogTheme(dialog, root, area, scroll, bottom);
 
         dialog.setContentPane(root);
@@ -837,12 +895,11 @@ public class GUI extends JFrame implements KeyListener {
         refocus();
     }
 
-
     private String loadSyntaxText() {
         try (InputStream in = GUI.class.getResourceAsStream("/SYNTAX.md")) {
             if (in == null) {
                 return "SYNTAX.md not found inside the jar.\n\n" +
-                    "Fix: put SYNTAX.md in src/main/resources/";
+                        "Fix: put SYNTAX.md in src/main/resources/";
             }
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (Exception e) {
@@ -892,7 +949,4 @@ public class GUI extends JFrame implements KeyListener {
             scroll.setBackground(bg);
         }
     }
-
-
-
 }
