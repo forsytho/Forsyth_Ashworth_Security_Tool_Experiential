@@ -1,0 +1,6 @@
+"roles:
+  Alice, Bob
+
+  Alice -> Bob: gA
+  Bob -> Alice: gB
+"

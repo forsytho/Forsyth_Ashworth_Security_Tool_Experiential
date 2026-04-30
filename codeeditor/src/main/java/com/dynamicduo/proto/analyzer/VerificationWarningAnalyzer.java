@@ -46,7 +46,7 @@ public final class VerificationWarningAnalyzer {
             }
         }
 
-        if (warnings.isEmpty()) warnings.add("No warnings.");
+        
         return warnings;
     }
 
