@@ -44,12 +44,13 @@ public final class AuthenticationWarningAnalyzer {
     private static boolean containsAuth(SyntaxNode node) {
         if (node == null) return false;
 
-        // Authentication primitives
         if (node instanceof SignExprNode) return true;
         if (node instanceof VerifyExprNode) return true;
 
-        // Recurse through AST
-        for (SyntaxNode child : node.children()) {
+        List<SyntaxNode> children = node.children();
+        if (children == null) return false;
+
+        for (SyntaxNode child : children) {
             if (containsAuth(child)) return true;
         }
 

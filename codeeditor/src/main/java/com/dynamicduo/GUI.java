@@ -419,11 +419,11 @@ public class GUI extends JFrame implements KeyListener {
 
             // ---- Warnings ----
             java.util.List<String> warns = new java.util.ArrayList<>();
+
             warns.addAll(AuthenticationWarningAnalyzer.analyze(tree));
             warns.addAll(VerificationWarningAnalyzer.analyze(tree));
             warns.addAll(KeyMisuseWarningAnalyzer.analyze(tree));
             warns.addAll(SignatureForgeryAnalysis.analyze(tree, result));
-           
 
 
             StringBuilder wsb = new StringBuilder();
@@ -441,6 +441,7 @@ public class GUI extends JFrame implements KeyListener {
             errorArea.setText("Parse error: " + pe.getMessage());
             executed = false;
         } catch (Exception ex) {
+            ex.printStackTrace();
             System.err.println("Render failed: " + ex.getMessage());
             errorArea.setText("Render failed: " + ex.getMessage());
             executed = false;
